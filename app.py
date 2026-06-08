@@ -1,17 +1,15 @@
 import os
 import requests
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import resend
 from google import genai
 
 # ==================== CONFIGURATION ====================
 NEWS_API_KEY = os.environ.get("NEWS_API_KEY", "YOUR_NEWSAPI_ORG_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY")
+RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL", "your_account@gmail.com")
 
-YAHOO_EMAIL = os.environ.get("YAHOO_EMAIL", "your_account@yahoo.com")
-YAHOO_APP_PASSWORD = os.environ.get("YAHOO_APP_PASSWORD", "xxxx xxxx xxxx xxxx")
-RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL", "your_account@yahoo.com")
+# Initialize the Resend API Key
+resend.api_key = os.environ.get("RESEND_API_KEY", "YOUR_RESEND_API_KEY")
 
 COUNTRIES = {
     "Taiwan": "taiwan",
@@ -126,33 +124,24 @@ def generate_expanded_matrix_html(raw_news):
     except Exception as e:
         return f"<h2>Error creating intelligence report</h2><p>{e}</p>"
 
-def send_yahoo_email(html_content):
-    """Logs into Yahoo SMTP server securely using SSL on Port 465."""
-    # Switching to explicit SSL on port 465
-    smtp_server = "smtp.mail.yahoo.com"
-    port = 465 
-    
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "📊 Complete Deep-Dive: Expanded Multi-Subject Intel Digest"
-    msg["From"] = YAHOO_EMAIL
-    msg["To"] = RECIPIENT_EMAIL
-    
-    msg.attach(MIMEText(html_content, "html"))
-    
+def send_resend_email(html_content):
+    """Sends the intelligence report newsletter using Resend API to bypass SMTP firewalls."""
     try:
-        print("🔐 Connecting to Yahoo Mail Server via SSL (Port 465)...")
-        # Use SMTP_SSL instead of regular SMTP
-        server = smtplib.SMTP_SSL(smtp_server, port)
-        server.login(YAHOO_EMAIL, YAHOO_APP_PASSWORD)
-        print("🚀 Sending expanded 9-bullet-per-sector newsletter payload...")
-        server.sendmail(YAHOO_EMAIL, RECIPIENT_EMAIL, msg.as_string())
-        server.quit()
-        print("✅ Success! Email delivered.")
+        print("🚀 Requesting email delivery via Resend API securely...")
+        params = {
+            "from": "NewsEngine <onboarding@resend.dev>",
+            "to": [RECIPIENT_EMAIL],
+            "subject": "📊 Complete Deep-Dive: Expanded Multi-Subject Intel Digest",
+            "html": html_content,
+        }
+        
+        resend.Emails.send(params)
+        print("✅ Success! Email transferred to Resend API pipeline successfully.")
     except Exception as e:
-        print(f"❌ SMTP Error: {e}")
+        print(f"❌ Resend API System Error: {e}")
 
 def main():
-    if "YOUR_" in NEWS_API_KEY or "YOUR_" in GEMINI_API_KEY or "your_account" in YAHOO_EMAIL:
+    if "YOUR_" in NEWS_API_KEY or "YOUR_" in GEMINI_API_KEY or "YOUR_" in resend.api_key:
         print("❌ Configuration Missing.")
         return
 
@@ -164,7 +153,7 @@ def main():
     print("🧠 Parsing deep multi-bullet language matrices and embedding web references...")
     report_html = generate_expanded_matrix_html(master_feed)
     
-    send_yahoo_email(report_html)
+    send_resend_email(report_html)
 
 if __name__ == "__main__":
     main()
