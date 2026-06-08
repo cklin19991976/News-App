@@ -127,9 +127,10 @@ def generate_expanded_matrix_html(raw_news):
         return f"<h2>Error creating intelligence report</h2><p>{e}</p>"
 
 def send_yahoo_email(html_content):
-    """Logs into Yahoo SMTP server securely using TLS and transfers the brief."""
+    """Logs into Yahoo SMTP server securely using SSL on Port 465."""
+    # Switching to explicit SSL on port 465
     smtp_server = "smtp.mail.yahoo.com"
-    port = 587 
+    port = 465 
     
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "📊 Complete Deep-Dive: Expanded Multi-Subject Intel Digest"
@@ -139,9 +140,9 @@ def send_yahoo_email(html_content):
     msg.attach(MIMEText(html_content, "html"))
     
     try:
-        print("🔐 Connecting to Yahoo Mail Server...")
-        server = smtplib.SMTP(smtp_server, port)
-        server.starttls()
+        print("🔐 Connecting to Yahoo Mail Server via SSL (Port 465)...")
+        # Use SMTP_SSL instead of regular SMTP
+        server = smtplib.SMTP_SSL(smtp_server, port)
         server.login(YAHOO_EMAIL, YAHOO_APP_PASSWORD)
         print("🚀 Sending expanded 9-bullet-per-sector newsletter payload...")
         server.sendmail(YAHOO_EMAIL, RECIPIENT_EMAIL, msg.as_string())
