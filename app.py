@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 import resend
 from google import genai
@@ -13,27 +14,26 @@ resend.api_key = os.environ.get("RESEND_API_KEY", "YOUR_RESEND_API_KEY")
 
 COUNTRIES = {
     "Taiwan": "taiwan",
-    "United States": "usa OR america",
-    "Ireland": "ireland"
+    "United States": "usa OR america"
 }
 
 TOPICS = (
     "(stock market OR finance OR \"artificial intelligence\" OR AI OR \"AI stocks\" OR "
     "\"Federal Reserve\" OR \"interest rate\" OR \"government bond\" OR Treasury OR "
-    "wireless OR 5G OR 6G OR technology OR politics)"
+    "wireless OR 5G OR 6G OR technology)"
 )
 # =======================================================
 
 def fetch_targeted_news(country_query):
-    """Fetches highly targeted articles to fulfill multi-bullet queries."""
+    """Fetches a broad news array to provide Gemini with a rich pool for editorial curation."""
     url = "https://newsapi.org/v2/everything"
     full_query = f"({country_query}) AND {TOPICS}"
     
     params = {
         "q": full_query,
-        "sortBy": "relevancy",
+        "sortBy": "relevancy", # Fetching relevant items first so Gemini has a high-quality data pool
         "language": "en",
-        "pageSize": 25,
+        "pageSize": 45,        # Expanded pool size so the AI has enough raw data to pick true top stories
         "apiKey": NEWS_API_KEY
     }
     
@@ -63,81 +63,81 @@ def fetch_targeted_news(country_query):
         return f"Error: {e}"
 
 def generate_expanded_matrix_html(raw_news):
-    """Uses Gemini to organize articles by subject with exactly 3 items per country."""
+    """Uses Gemini to filter, prioritize, and select the absolute most critical stories of the day."""
     client = genai.Client(api_key=GEMINI_API_KEY)
     
     prompt = f"""
-    You are an elite corporate intelligence brief compiler. Organize the raw global news logs provided below into a comprehensive HTML newsletter structured explicitly by SUBJECT/TOPIC.
+    You are an elite chief corporate intelligence officer. Analyze the raw recent data feed provided below. Your primary task is to critically evaluate all entries and CHOOSE ONLY the absolute most important, high-impact, and critical news stories of the day for each subject matrix. Ignore minor updates; prioritize structural shifts, major market movements, macro policy updates, and breakthrough announcements.
     
-    REQUIRED EMAIL STRUCTURE & QUANTITY RULES:
-    1. Executive Overview (Written in English - max 3 sentences)
+    REQUIRED EMAIL STRUCTURE & EDITORIAL RULES:
+    1. Executive Overview (Written in English - max 3 sentences summarizing the single most critical global development across your sectors today).
     
     2. Section 1: Stock Markets & Finance
-       - FOCUS: AI-related stocks, broad market movements, US bonds, and Federal interest rate decisions.
-       - COUNTRYSIDE BREAKDOWN: 
-          * Under 'Taiwan' subheader, list EXACTLY 3 crisp news bullet items written in Traditional Chinese (繁體中文).
-          * Under 'United States' subheader, list EXACTLY 3 crisp news bullet items written in English.
-          * Under 'Ireland' subheader, list EXACTLY 3 crisp news bullet items written in English.
-       - Image: <img src="https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=600&q=80" style="max-width:100%; border-radius:6px; margin:10px 0;" alt="Finance Matrix" />
+       - SELECTION CRITERIA: Evaluate and choose the top 3 most critical macro-financial updates regarding AI-related stocks, broad indexes, Treasuries, and Fed interest rate trajectories.
+       - GEOGRAPHICAL BREAKDOWN:
+          * Under a 'Taiwan' subheader, list EXACTLY 3 chosen top-tier news items written in Traditional Chinese (繁體中文).
+          * Under a 'United States' subheader, list EXACTLY 3 chosen top-tier news items written in English.
+       - Section Image: <img src="https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=600&q=80" style="max-width:100%; border-radius:6px; margin:10px 0;" alt="Finance Matrix" />
     
     3. Section 2: Artificial Intelligence & New Technology
-       - FOCUS: Software models, computational hardware breakthrough architectures, and R&D.
-       - COUNTRYSIDE BREAKDOWN: 
-          * Under 'Taiwan' subheader, list EXACTLY 3 crisp news bullet items written in Traditional Chinese (繁體中文).
-          * Under 'United States' subheader, list EXACTLY 3 crisp news bullet items written in English.
-          * Under 'Ireland' subheader, list EXACTLY 3 crisp news bullet items written in English.
-       - Image: <img src="https://images.unsplash.com/photo-1540959733332-eab4deceeaf7?auto=format&fit=crop&w=600&q=80" style="max-width:100%; border-radius:6px; margin:10px 0;" alt="AI Tech Matrix" />
+       - SELECTION CRITERIA: Evaluate and choose the top 3 most groundbreaking updates regarding foundational software architectures, infrastructure hardware breakthroughs, or monumental corporate integrations.
+       - GEOGRAPHICAL BREAKDOWN:
+          * Under a 'Taiwan' subheader, list EXACTLY 3 chosen top-tier news items written in Traditional Chinese (繁體中文).
+          * Under a 'United States' subheader, list EXACTLY 3 chosen top-tier news items written in English.
+       - Section Image: <img src="https://images.unsplash.com/photo-1540959733332-eab4deceeaf7?auto=format&fit=crop&w=600&q=80" style="max-width:100%; border-radius:6px; margin:10px 0;" alt="AI Tech Matrix" />
     
     4. Section 3: Wireless Communications (5G & 6G)
-       - FOCUS: Next-gen 5G standalone networks, emerging 6G spectrum research, routers, telecom nodes, and mobile infrastructure.
-       - COUNTRYSIDE BREAKDOWN: 
-          * Under 'Taiwan' subheader, list EXACTLY 3 crisp news bullet items written in Traditional Chinese (繁體中文).
-          * Under 'United States' subheader, list EXACTLY 3 crisp news bullet items written in English.
-          * Under 'Ireland' subheader, list EXACTLY 3 crisp news bullet items written in English.
-       - Image: <img src="https://images.unsplash.com/photo-1562408590-e32931084e23?auto=format&fit=crop&w=600&q=80" style="max-width:100%; border-radius:6px; margin:10px 0;" alt="Wireless Communication Matrix" />
+       - SELECTION CRITERIA: Evaluate and choose the top 3 most vital infrastructure developments across 5G Advanced deployments, 6G research, spectral management, or tier-1 carrier announcements.
+       - GEOGRAPHICAL BREAKDOWN:
+          * Under a 'Taiwan' subheader, list EXACTLY 3 chosen top-tier news items written in Traditional Chinese (繁體中文).
+          * Under a 'United States' subheader, list EXACTLY 3 chosen top-tier news items written in English.
+       - Section Image: <img src="https://images.unsplash.com/photo-1562408590-e32931084e23?auto=format&fit=crop&w=600&q=80" style="max-width:100%; border-radius:6px; margin:10px 0;" alt="Wireless Communication Matrix" />
 
-    5. Section 4: Macro-Politics & Regulations
-       - FOCUS: International relations, tech trade embargoes, legislative measures, and structural policies.
-       - COUNTRYSIDE BREAKDOWN: 
-          * Under 'Taiwan' subheader, list EXACTLY 3 crisp news bullet items written in Traditional Chinese (繁體中文).
-          * Under 'United States' subheader, list EXACTLY 3 crisp news bullet items written in English.
-          * Under 'Ireland' subheader, list EXACTLY 3 crisp news bullet items written in English.
-       - Image: <img src="https://images.unsplash.com/photo-1590089415225-401ed6f9db8e?auto=format&fit=crop&w=600&q=80" style="max-width:100%; border-radius:6px; margin:10px 0;" alt="Macro Politics Matrix" />
-
-    CRITICAL INSTRUCTIONS:
-    - Language Enforcement: Taiwan content = Traditional Chinese (繁體中文). USA & Ireland content = English. Executive overview = English.
-    - Keep each bullet point brief and high-level (maximum 2 sentences per bullet) to optimize payload limits.
-    - Every bullet point MUST keep its live source link. Append HTML anchors to every item.
+    CRITICAL EXECUTION RULES:
+    - Language Enforcement: Taiwan sections must be in native Traditional Chinese (繁體中文). USA sections and the Overview must be in English.
+    - Each bullet item must be concise (max 2 sentences), focusing exclusively on *why* this news is the most critical event of the day.
+    - Every bullet point must retain its original source link via a clean HTML anchor tag.
     - For English items use: <a href="URL" style="color:#3182ce; text-decoration:none; font-size:13px; margin-left:5px;">[Source Link]</a>
     - For Chinese items use: <a href="URL" style="color:#3182ce; text-decoration:none; font-size:13px; margin-left:5px;">[來源連結]</a>
-    - Apply professional inline email CSS styling. Omit ```html markdown wrappers. Output only raw inner HTML.
+    - Apply professional inline email CSS styling. Omit all ```html wrappers. Output only raw inner HTML.
 
-    Raw data feed:
+    Raw daily data pool:
     {raw_news}
     """
     
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-        )
-        return response.text
-    except Exception as e:
-        return f"<h2>Error creating intelligence report</h2><p>{e}</p>"
+    max_retries = 3
+    delay = 5  
+    
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+            )
+            return response.text
+        except Exception as e:
+            if "503" in str(e) or "UNAVAILABLE" in str(e):
+                print(f"⚠️ Gemini is busy (Attempt {attempt + 1}/{max_retries}). Retrying in {delay} seconds...")
+                time.sleep(delay)
+                delay *= 2  
+            else:
+                return f"<h2>Error creating intelligence report</h2><p>{e}</p>"
+                
+    return "<h2>Error: Gemini API remained unavailable after multiple retry attempts. Please run the script again.</h2>"
 
 def send_resend_email(html_content):
-    """Sends the intelligence report newsletter using Resend API."""
+    """Sends the curated intelligence newsletter using Resend API to bypass SMTP firewalls."""
     try:
         print("🚀 Requesting email delivery via Resend API securely...")
         params = {
             "from": "NewsEngine <onboarding@resend.dev>",
             "to": [RECIPIENT_EMAIL],
-            "subject": "📊 Complete Deep-Dive: Expanded Multi-Subject Intel Digest",
+            "subject": "🌟 Top-Tier Strategic Curation: Daily Executive News Briefing",
             "html": html_content,
         }
         
         resend.Emails.send(params)
-        print("✅ Success! Email transferred to Resend API pipeline successfully.")
+        print("clean code deployment - ✅ Success! Email transferred to Resend API pipeline successfully.")
     except Exception as e:
         print(f"❌ Resend API System Error: {e}")
 
@@ -146,12 +146,12 @@ def main():
         print("❌ Configuration Missing.")
         return
 
-    print("🛰️ Mining intensive raw data array across global endpoints...")
+    print("🛰️ Mining broad raw data pool across selected endpoints...")
     master_feed = ""
     for name, query in COUNTRIES.items():
         master_feed += f"\n=== {name.upper()} DATA INTERCEPT ===\n" + fetch_targeted_news(query) + "\n"
         
-    print("🧠 Parsing deep multi-bullet language matrices and embedding web references...")
+    print("🧠 Chief Editor Model: Evaluating raw feeds to filter, weigh, and select today's top stories...")
     report_html = generate_expanded_matrix_html(master_feed)
     
     send_resend_email(report_html)
