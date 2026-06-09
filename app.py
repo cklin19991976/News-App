@@ -11,8 +11,10 @@ RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL", "your_account@gmail.com")
 # Initialize the Resend API Key
 resend.api_key = os.environ.get("RESEND_API_KEY", "YOUR_RESEND_API_KEY")
 
-# 🛠️ ADD THIS LINE: Override Resend's default 30s timeout to 120 seconds for large HTML payloads
-resend.default_http_client = resend.HTTPClient(timeout=120)
+# 🛠️ CORRECTED TIMEOUT CONFIGURATION:
+# Instantiate the client first, then inject a customized timeout onto its session settings
+resend.default_http_client = resend.HTTPClient()
+resend.default_http_client.timeout = 120
 
 COUNTRIES = {
     "Taiwan": "taiwan",
