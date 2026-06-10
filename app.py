@@ -3,7 +3,7 @@ import time
 import requests
 import resend
 from google import genai
-from google.genai import types # 🛠️ Imported to control the thinking configuration
+from google.genai import types
 
 # ==================== CONFIGURATION ====================
 NEWS_API_KEY = os.environ.get("NEWS_API_KEY", "YOUR_NEWSAPI_ORG_KEY")
@@ -64,59 +64,96 @@ def fetch_targeted_news(country_query):
         return f"Error: {e}"
 
 def generate_expanded_matrix_html(raw_news):
-    """Uses optimized Gemini models to map daily news matrices without triggering rate limit blocks."""
+    """Uses optimized Gemini models to structure an ultra-clean executive briefing dashboard."""
     client = genai.Client(api_key=GEMINI_API_KEY)
     
     prompt = f"""
-    You are an elite chief corporate intelligence officer. Analyze the raw recent data feed provided below. Your primary task is to critically evaluate all entries and CHOOSE ONLY the absolute most important, high-impact, and critical news stories of the day for each subject matrix. Ignore minor updates; prioritize structural shifts, major market movements, macro policy updates, and breakthrough announcements.
-    
-    REQUIRED EMAIL STRUCTURE & EDITORIAL RULES:
-    1. Executive Overview (Written in English - max 3 sentences summarizing the single most critical global development across your sectors today).
-    
-    2. Section 1: Stock Markets & Finance
-       - SELECTION CRITERIA: Evaluate and choose the top 3 most critical macro-financial updates regarding AI-related stocks, broad indexes, Treasuries, and Fed interest rate trajectories.
-       - GEOGRAPHICAL BREAKDOWN:
-          * Under a 'Taiwan' subheader, list EXACTLY 3 chosen top-tier news items written in Traditional Chinese (繁體中文).
-          * Under a 'United States' subheader, list EXACTLY 3 chosen top-tier news items written in English.
-       - Section Image: <img src="https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=600&q=80" style="max-width:100%; border-radius:6px; margin:10px 0;" alt="Finance Matrix" />
-    
-    3. Section 2: Artificial Intelligence & New Technology
-       - SELECTION CRITERIA: Evaluate and choose the top 3 most groundbreaking updates regarding foundational software architectures, infrastructure hardware breakthroughs, or monumental corporate integrations.
-       - GEOGRAPHICAL BREAKDOWN:
-          * Under a 'Taiwan' subheader, list EXACTLY 3 chosen top-tier news items written in Traditional Chinese (繁體中文).
-          * Under a 'United States' subheader, list EXACTLY 3 chosen top-tier news items written in English.
-       - Section Image: <img src="https://images.unsplash.com/photo-1540959733332-eab4deceeaf7?auto=format&fit=crop&w=600&q=80" style="max-width:100%; border-radius:6px; margin:10px 0;" alt="AI Tech Matrix" />
-    
-    4. Section 3: Wireless Communications (5G & 6G)
-       - SELECTION CRITERIA: Evaluate and choose the top 3 most vital infrastructure developments across 5G Advanced deployments, 6G research, spectral management, or tier-1 carrier announcements.
-       - GEOGRAPHICAL BREAKDOWN:
-          * Under a 'Taiwan' subheader, list EXACTLY 3 chosen top-tier news items written in Traditional Chinese (繁體中文).
-          * Under a 'United States' subheader, list EXACTLY 3 chosen top-tier news items written in English.
-       - Section Image: <img src="https://images.unsplash.com/photo-1562408590-e32931084e23?auto=format&fit=crop&w=600&q=80" style="max-width:100%; border-radius:6px; margin:10px 0;" alt="Wireless Communication Matrix" />
+    You are an elite chief corporate intelligence officer. Your task is to critically evaluate the raw global news feed below, choose ONLY the top 3 most critical, high-impact stories of the day per country per category, and output them wrapped inside an ultra-clean, professional HTML email dashboard template.
 
-    CRITICAL EXECUTION RULES:
-    - Language Enforcement: Taiwan sections must be in native Traditional Chinese (繁體中文). USA sections and the Overview must be in English.
-    - Each bullet item must be concise (max 2 sentences), focusing exclusively on *why* this news is the most critical event of the day.
-    - Every bullet point must retain its original source link via a clean HTML anchor tag.
-    - For English items use: <a href="URL" style="color:#3182ce; text-decoration:none; font-size:13px; margin-left:5px;">[Source Link]</a>
-    - For Chinese items use: <a href="URL" style="color:#3182ce; text-decoration:none; font-size:13px; margin-left:5px;">[來源連結]</a>
-    - Apply professional inline email CSS styling. Omit all ```html wrappers. Output only raw inner HTML.
+    Follow this HTML layout structure precisely, using modern inline CSS:
 
-    Raw daily data pool:
+    <div style="background-color:#f8fafc; padding:30px 15px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color:#1e293b; max-width:650px; margin:0 auto; border-radius:12px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);">
+        
+        <!-- HEADER -->
+        <div style="border-bottom:2px solid #e2e8f0; padding-bottom:15px; margin-bottom:25px;">
+            <h1 style="margin:0; font-size:24px; color:#0f172a; font-weight:800; letter-spacing:-0.025em;">🌟 Daily Executive Intelligence Briefing</h1>
+            <p style="margin:5px 0 0 0; font-size:14px; color:#64748b;">Curated strategic macro analysis, tech, and wireless updates.</p>
+        </div>
+
+        <!-- EXECUTIVE OVERVIEW CARD -->
+        <div style="background-color:#eff6ff; border-left:4px solid #3b82f6; padding:15px; border-radius:0 8px 8px 0; margin-bottom:30px;">
+            <h3 style="margin:0 0 8px 0; font-size:14px; text-transform:uppercase; letter-spacing:0.05em; color:#1d4ed8; font-weight:700;">Executive Summary</h3>
+            <p style="margin:0; font-size:14px; line-height:1.6; color:#1e3a8a;">[INSERT 2-3 SENTENCE GLOBAL IMPACT SUMMARY HERE IN ENGLISH]</p>
+        </div>
+
+        <!-- SECTION 1: FINANCE -->
+        <div style="background-color:#ffffff; border-radius:8px; border:1px solid #e2e8f0; padding:20px; margin-bottom:25px;">
+            <div style="display:inline-block; background-color:#f0fdf4; color:#166534; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:10px; text-transform:uppercase;">📈 Stock Markets & Finance</div>
+            <img src="https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=600&q=80" style="width:100%; height:140px; object-fit:cover; border-radius:6px; margin:8px 0 15px 0;" alt="Finance" />
+            
+            <h4 style="margin:10px 0 10px 0; font-size:15px; color:#334155; border-bottom:1px solid #f1f5f9; padding-bottom:4px;">🇹🇼 Taiwan Market (繁體中文)</h4>
+            <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
+                [INSERT EXACTLY 3 CHOSEN TRADITIONAL CHINESE BULLETS. FORMAT EACH AS: <style="margin-bottom:8px;"><strong>Headline Title</strong> — Description summary sentence. <a href="URL" style="color:#2563eb; text-decoration:none; font-size:12px; font-weight:600;">[來源連結]</a></style>]
+            </ul>
+            
+            <h4 style="margin:20px 0 10px 0; font-size:15px; color:#334155; border-bottom:1px solid #f1f5f9; padding-bottom:4px;">🇺🇸 United States Market (English)</h4>
+            <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
+                [INSERT EXACTLY 3 CHOSEN ENGLISH BULLETS. FORMAT EACH AS: <style="margin-bottom:8px;"><strong>Headline Title</strong> — Description summary sentence. <a href="URL" style="color:#2563eb; text-decoration:none; font-size:12px; font-weight:600;">[Source Link]</a></style>]
+            </ul>
+        </div>
+
+        <!-- SECTION 2: AI TECH -->
+        <div style="background-color:#ffffff; border-radius:8px; border:1px solid #e2e8f0; padding:20px; margin-bottom:25px;">
+            <div style="display:inline-block; background-color:#fef2f2; color:#991b1b; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:10px; text-transform:uppercase;">🧠 Artificial Intelligence & Tech</div>
+            <img src="https://images.unsplash.com/photo-1540959733332-eab4deceeaf7?auto=format&fit=crop&w=600&q=80" style="width:100%; height:140px; object-fit:cover; border-radius:6px; margin:8px 0 15px 0;" alt="AI Tech" />
+            
+            <h4 style="margin:10px 0 10px 0; font-size:15px; color:#334155; border-bottom:1px solid #f1f5f9; padding-bottom:4px;">🇹🇼 Taiwan Tech Ecosystem (繁體中文)</h4>
+            <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
+                [INSERT EXACTLY 3 CHOSEN TRADITIONAL CHINESE BULLETS WITH HTML LINK HERE]
+            </ul>
+            
+            <h4 style="margin:20px 0 10px 0; font-size:15px; color:#334155; border-bottom:1px solid #f1f5f9; padding-bottom:4px;">🇺🇸 United States Innovation (English)</h4>
+            <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
+                [INSERT EXACTLY 3 CHOSEN ENGLISH BULLETS WITH HTML LINK HERE]
+            </ul>
+        </div>
+
+        <!-- SECTION 3: WIRELESS -->
+        <div style="background-color:#ffffff; border-radius:8px; border:1px solid #e2e8f0; padding:20px; margin-bottom:15px;">
+            <div style="display:inline-block; background-color:#eff6ff; color:#1e40af; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:10px; text-transform:uppercase;">📡 Wireless Communications (5G/6G)</div>
+            <img src="https://images.unsplash.com/photo-1562408590-e32931084e23?auto=format&fit=crop&w=600&q=80" style="width:100%; height:140px; object-fit:cover; border-radius:6px; margin:8px 0 15px 0;" alt="Wireless Infrastructure" />
+            
+            <h4 style="margin:10px 0 10px 0; font-size:15px; color:#334155; border-bottom:1px solid #f1f5f9; padding-bottom:4px;">🇹🇼 Taiwan Telco Networks (繁體中文)</h4>
+            <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
+                [INSERT EXACTLY 3 CHOSEN TRADITIONAL CHINESE BULLETS WITH HTML LINK HERE]
+            </ul>
+            
+            <h4 style="margin:20px 0 10px 0; font-size:15px; color:#334155; border-bottom:1px solid #f1f5f9; padding-bottom:4px;">🇺🇸 United States Infrastructure (English)</h4>
+            <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
+                [INSERT EXACTLY 3 CHOSEN ENGLISH BULLETS WITH HTML LINK HERE]
+            </ul>
+        </div>
+
+    </div>
+
+    CRITICAL INSTRUCTIONS:
+    - Never break the visual shell layout block template. Replace the bracket placeholders with the actual curated content entries dynamically.
+    - Ensure EVERY bullet entry contains a clear structural title wrapped in <strong> tags, a clean explanatory summary sentence, and its anchor resource link.
+    - Omit any wrapper ```html markdown syntax tags. Return only the raw inner string content.
+
+    Raw data pool source feed:
     {raw_news}
     """
     
     max_retries = 3
     delay = 5  
     
-    # 🛠️ Configuration to clear out slow internal model thinking steps to maximize free-tier API speed
     api_config = types.GenerateContentConfig(
         thinking_config=types.ThinkingConfig(thinking_budget=0)
     )
     
     for attempt in range(max_retries):
         try:
-            # 🛠️ Switched to the high-throughput 'gemini-2.5-flash-lite' model
             response = client.models.generate_content(
                 model='gemini-2.5-flash-lite',
                 contents=prompt,
@@ -134,18 +171,18 @@ def generate_expanded_matrix_html(raw_news):
     return "<h2>Error: Gemini API remained unavailable after multiple retry attempts. Please run the script again.</h2>"
 
 def send_resend_email(html_content):
-    """Sends the curated intelligence newsletter using Resend API to bypass SMTP firewalls."""
+    """Sends the beautifully formatted intelligence newsletter using Resend API."""
     try:
         print("🚀 Requesting email delivery via Resend API securely...")
         params = {
             "from": "NewsEngine <onboarding@resend.dev>",
             "to": [RECIPIENT_EMAIL],
-            "subject": "🌟 Top-Tier Strategic Curation: Daily Executive News Briefing",
+            "subject": "🌟 Daily Corporate Intelligence Dashboard",
             "html": html_content,
         }
         
         resend.Emails.send(params)
-        print("✅ Success! Email transferred to Resend API pipeline successfully.")
+        print("✅ Success! Formatted email transferred to Resend successfully.")
     except Exception as e:
         print(f"❌ Resend API System Error: {e}")
 
@@ -159,7 +196,7 @@ def main():
     for name, query in COUNTRIES.items():
         master_feed += f"\n=== {name.upper()} DATA INTERCEPT ===\n" + fetch_targeted_news(query) + "\n"
         
-    print("🧠 Chief Editor Model: Evaluating raw feeds to filter, weigh, and select today's top stories...")
+    print("🧠 Chief Editor Model: Evaluating raw feeds to construct the clean UI structure...")
     report_html = generate_expanded_matrix_html(master_feed)
     
     send_resend_email(report_html)
