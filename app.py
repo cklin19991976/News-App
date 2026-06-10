@@ -3,6 +3,7 @@ import time
 import requests
 import resend
 from google import genai
+from google.genai import types # 🛠️ Imported to control the thinking configuration
 
 # ==================== CONFIGURATION ====================
 NEWS_API_KEY = os.environ.get("NEWS_API_KEY", "YOUR_NEWSAPI_ORG_KEY")
@@ -31,9 +32,9 @@ def fetch_targeted_news(country_query):
     
     params = {
         "q": full_query,
-        "sortBy": "relevancy", # Fetching relevant items first so Gemini has a high-quality data pool
+        "sortBy": "relevancy",
         "language": "en",
-        "pageSize": 45,        # Expanded pool size so the AI has enough raw data to pick true top stories
+        "pageSize": 45,        
         "apiKey": NEWS_API_KEY
     }
     
@@ -63,7 +64,7 @@ def fetch_targeted_news(country_query):
         return f"Error: {e}"
 
 def generate_expanded_matrix_html(raw_news):
-    """Uses Gemini to filter, prioritize, and select the absolute most critical stories of the day."""
+    """Uses optimized Gemini models to map daily news matrices without triggering rate limit blocks."""
     client = genai.Client(api_key=GEMINI_API_KEY)
     
     prompt = f"""
@@ -108,16 +109,23 @@ def generate_expanded_matrix_html(raw_news):
     max_retries = 3
     delay = 5  
     
+    # 🛠️ Configuration to clear out slow internal model thinking steps to maximize free-tier API speed
+    api_config = types.GenerateContentConfig(
+        thinking_config=types.ThinkingConfig(thinking_budget=0)
+    )
+    
     for attempt in range(max_retries):
         try:
+            # 🛠️ Switched to the high-throughput 'gemini-2.5-flash-lite' model
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-2.5-flash-lite',
                 contents=prompt,
+                config=api_config
             )
             return response.text
         except Exception as e:
-            if "503" in str(e) or "UNAVAILABLE" in str(e):
-                print(f"⚠️ Gemini is busy (Attempt {attempt + 1}/{max_retries}). Retrying in {delay} seconds...")
+            if "503" in str(e) or "UNAVAILABLE" in str(e) or "429" in str(e):
+                print(f"⚠️ Service rate-limited (Attempt {attempt + 1}/{max_retries}). Retrying in {delay} seconds...")
                 time.sleep(delay)
                 delay *= 2  
             else:
@@ -137,7 +145,7 @@ def send_resend_email(html_content):
         }
         
         resend.Emails.send(params)
-        print("clean code deployment - ✅ Success! Email transferred to Resend API pipeline successfully.")
+        print("✅ Success! Email transferred to Resend API pipeline successfully.")
     except Exception as e:
         print(f"❌ Resend API System Error: {e}")
 
