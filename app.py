@@ -13,26 +13,29 @@ RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL", "your_account@gmail.com")
 
 resend.api_key = os.environ.get("RESEND_API_KEY", "YOUR_RESEND_API_KEY")
 
-# Simplified, high-impact categories to guarantee a rich data stream
+# Robust keyword queries that play nice with NewsAPI free tier matching logic
 CATEGORIES = {
-    "Taiwan_Finance": "taiwan AND (stock OR market OR finance OR TSMC)",
-    "Taiwan_Tech": "taiwan AND (AI OR tech OR semiconductor OR wireless OR 5G)",
-    "US_Finance": "(nasdaq OR dow OR federal reserve OR bond OR treasury)",
-    "US_Tech": "(nvidia OR AI OR artificial intelligence OR software OR 6G)"
+    "Taiwan_Finance": "taiwan AND (market OR finance OR stock)",
+    "Taiwan_Tech": "taiwan AND (AI OR semiconductor OR tech)",
+    "US_Finance": "us AND (fed OR bonds OR dow OR nasdaq)",
+    "US_Tech": "us AND (nvidia OR tech OR \"artificial intelligence\")",
+    "Wireless": "(5G OR 6G OR telecom OR wireless)"
 }
 # =======================================================
 
 def fetch_category_news(query_string):
-    """Fetches high-relevancy articles from the past 24 hours for a clean data feed."""
+    """Fetches real articles using clean YYYY-MM-DD parameters for free tier stability."""
     url = "https://newsapi.org/v2/everything"
-    time_24h_ago = (datetime.utcnow() - timedelta(hours=24)).strftime('%Y-%m-%dT%H:%M:%S')
+    
+    # 🛠️ FIXED: Use simple calendar day syntax instead of complex hourly ISO strings
+    date_yesterday = (datetime.utcnow() - timedelta(days=1)).strftime('%Y-%m-%d')
     
     params = {
         "q": query_string,
-        "sortBy": "relevancy",  # Prioritizes major headlines over obscure timeline ticks
-        "from": time_24h_ago,
+        "sortBy": "relevancy",  
+        "from": date_yesterday, # Clean date structure accepted by developer keys
         "language": "en",
-        "pageSize": 15,         # Targeted array size per segment
+        "pageSize": 20,         
         "apiKey": NEWS_API_KEY
     }
     
@@ -45,15 +48,17 @@ def fetch_category_news(query_string):
         formatted_news = []
         
         for art in articles:
-            title = art.get("title", "No Title")
+            title = art.get("title", "")
             source = art.get("source", {}).get("name", "Unknown")
             description = art.get("description", "")
             article_url = art.get("url", "#")
             
-            if title and title != "[Removed]":
+            # Avoid blank entries or removed articles
+            if title and title != "[Removed]" and "No Title" not in title:
                 formatted_news.append(f"[{source}] {title}\nSummary: {description}\nLink: {article_url}")
                 
-        return "\n\n".join(formatted_news) if formatted_news else "No articles found for this cluster."
+        # Fallback tracking if a specific category returns empty
+        return "\n\n".join(formatted_news) if formatted_news else "No specific articles found for this category loop."
     except Exception as e:
         return f"Error gathering data: {e}"
 
@@ -68,19 +73,16 @@ def generate_expanded_matrix_html(raw_news_payload):
 
     <div style="background-color:#f8fafc; padding:30px 15px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color:#1e293b; max-width:650px; margin:0 auto; border-radius:12px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);">
         
-        <!-- HEADER -->
         <div style="border-bottom:2px solid #e2e8f0; padding-bottom:15px; margin-bottom:25px;">
             <h1 style="margin:0; font-size:24px; color:#0f172a; font-weight:800; letter-spacing:-0.025em;">🌟 Daily Executive Intelligence Briefing</h1>
             <p style="margin:5px 0 0 0; font-size:14px; color:#64748b;">Curated top strategic events and developments from the last 24 hours.</p>
         </div>
 
-        <!-- EXECUTIVE OVERVIEW CARD -->
         <div style="background-color:#eff6ff; border-left:4px solid #3b82f6; padding:15px; border-radius:0 8px 8px 0; margin-bottom:30px;">
             <h3 style="margin:0 0 8px 0; font-size:14px; text-transform:uppercase; letter-spacing:0.05em; color:#1d4ed8; font-weight:700;">Executive Summary</h3>
             <p style="margin:0; font-size:14px; line-height:1.6; color:#1e3a8a;">[INSERT 2-3 SENTENCE GLOBAL IMPACT SUMMARY OF THE BREAKING MOVES HERE IN ENGLISH]</p>
         </div>
 
-        <!-- SECTION 1: FINANCE -->
         <div style="background-color:#ffffff; border-radius:8px; border:1px solid #e2e8f0; padding:20px; margin-bottom:25px;">
             <div style="display:inline-block; background-color:#f0fdf4; color:#166534; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:10px; text-transform:uppercase;">📈 Stock Markets & Finance</div>
             <img src="https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=600&q=80" style="width:100%; height:140px; object-fit:cover; border-radius:6px; margin:8px 0 15px 0;" alt="Finance" />
@@ -96,7 +98,6 @@ def generate_expanded_matrix_html(raw_news_payload):
             </ul>
         </div>
 
-        <!-- SECTION 2: AI TECH -->
         <div style="background-color:#ffffff; border-radius:8px; border:1px solid #e2e8f0; padding:20px; margin-bottom:25px;">
             <div style="display:inline-block; background-color:#fef2f2; color:#991b1b; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:10px; text-transform:uppercase;">🧠 Artificial Intelligence & Tech</div>
             <img src="https://images.unsplash.com/photo-1540959733332-eab4deceeaf7?auto=format&fit=crop&w=600&q=80" style="width:100%; height:140px; object-fit:cover; border-radius:6px; margin:8px 0 15px 0;" alt="AI Tech" />
@@ -112,7 +113,6 @@ def generate_expanded_matrix_html(raw_news_payload):
             </ul>
         </div>
 
-        <!-- SECTION 3: WIRELESS -->
         <div style="background-color:#ffffff; border-radius:8px; border:1px solid #e2e8f0; padding:20px; margin-bottom:15px;">
             <div style="display:inline-block; background-color:#eff6ff; color:#1e40af; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:10px; text-transform:uppercase;">📡 Wireless Communications (5G/6G)</div>
             <img src="https://images.unsplash.com/photo-1562408590-e32931084e23?auto=format&fit=crop&w=600&q=80" style="width:100%; height:140px; object-fit:cover; border-radius:6px; margin:8px 0 15px 0;" alt="Wireless Infrastructure" />
@@ -131,8 +131,8 @@ def generate_expanded_matrix_html(raw_news_payload):
     </div>
 
     CRITICAL INSTRUCTIONS:
-    - Never break the shell layout block template. Substitute placeholders with true analytical insights.
-    - Pick only the absolute highest-impact breaking updates from the last 24 hours. Do not hallucinate or list empty notices.
+    - Never break the shell layout template. Substitute placeholders with actual curated news facts from the source feed.
+    - If the raw text discusses market pullbacks, tech crashes, or company news, report those exact specific events accurately. 
     - Language Enforcement: Taiwan content sections must be in native Traditional Chinese (繁體中文). USA sections and the Overview must be in English.
     - Apply professional inline email CSS styling. Omit all ```html wrappers. Output only raw inner HTML.
 
