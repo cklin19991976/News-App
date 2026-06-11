@@ -11,35 +11,28 @@ NEWS_API_KEY = os.environ.get("NEWS_API_KEY", "YOUR_NEWSAPI_ORG_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY")
 RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL", "your_account@gmail.com")
 
-# Initialize the Resend API Key
 resend.api_key = os.environ.get("RESEND_API_KEY", "YOUR_RESEND_API_KEY")
 
-COUNTRIES = {
-    "Taiwan": "taiwan",
-    "United States": "usa OR america"
+# Simplified, high-impact categories to guarantee a rich data stream
+CATEGORIES = {
+    "Taiwan_Finance": "taiwan AND (stock OR market OR finance OR TSMC)",
+    "Taiwan_Tech": "taiwan AND (AI OR tech OR semiconductor OR wireless OR 5G)",
+    "US_Finance": "(nasdaq OR dow OR federal reserve OR bond OR treasury)",
+    "US_Tech": "(nvidia OR AI OR artificial intelligence OR software OR 6G)"
 }
-
-TOPICS = (
-    "(stock market OR finance OR \"artificial intelligence\" OR AI OR \"AI stocks\" OR "
-    "\"Federal Reserve\" OR \"interest rate\" OR \"government bond\" OR Treasury OR "
-    "wireless OR 5G OR 6G OR technology)"
-)
 # =======================================================
 
-def fetch_targeted_news(country_query):
-    """Fetches broad news arrays published strictly within the last 24 hours."""
+def fetch_category_news(query_string):
+    """Fetches high-relevancy articles from the past 24 hours for a clean data feed."""
     url = "https://newsapi.org/v2/everything"
-    full_query = f"({country_query}) AND {TOPICS}"
-    
-    # Calculate a precise timestamp representing exactly 24 hours ago
     time_24h_ago = (datetime.utcnow() - timedelta(hours=24)).strftime('%Y-%m-%dT%H:%M:%S')
     
     params = {
-        "q": full_query,
-        "sortBy": "publishedAt", # Force freshest breaking news to appear first
-        "from": time_24h_ago,     # Explicit constraint limiting the API timeline window
+        "q": query_string,
+        "sortBy": "relevancy",  # Prioritizes major headlines over obscure timeline ticks
+        "from": time_24h_ago,
         "language": "en",
-        "pageSize": 45,        
+        "pageSize": 15,         # Targeted array size per segment
         "apiKey": NEWS_API_KEY
     }
     
@@ -56,26 +49,20 @@ def fetch_targeted_news(country_query):
             source = art.get("source", {}).get("name", "Unknown")
             description = art.get("description", "")
             article_url = art.get("url", "#")
-            published_time = art.get("publishedAt", "Unknown Time")
             
-            if title != "[Removed]":
-                formatted_news.append(
-                    f"- [{source}] {title}\n"
-                    f"  Time: {published_time}\n"
-                    f"  Link: {article_url}\n"
-                    f"  Snippet: {description}"
-                )
+            if title and title != "[Removed]":
+                formatted_news.append(f"[{source}] {title}\nSummary: {description}\nLink: {article_url}")
                 
-        return "\n\n".join(formatted_news) if formatted_news else "No matching records."
+        return "\n\n".join(formatted_news) if formatted_news else "No articles found for this cluster."
     except Exception as e:
-        return f"Error: {e}"
+        return f"Error gathering data: {e}"
 
-def generate_expanded_matrix_html(raw_news):
-    """Uses optimized Gemini models to organize real-time articles into a dashboard structure."""
+def generate_expanded_matrix_html(raw_news_payload):
+    """Uses Gemini to filter, force-rank, and construct a high-impact news matrix."""
     client = genai.Client(api_key=GEMINI_API_KEY)
     
     prompt = f"""
-    You are an elite chief corporate intelligence officer. Analyze the raw recent data feed provided below. Every article provided includes a timestamp showing it occurred within the last 24 hours. Your primary task is to critically evaluate these fresh entries and CHOOSE ONLY the absolute top 3 most important, breaking, high-impact news stories of the last 24 hours for each subject matrix.
+    You are an elite corporate intelligence compiler. Analyze the raw recent data feed provided below. Your primary task is to critically evaluate these fresh entries and CHOOSE ONLY the absolute top 3 most important, breaking, high-impact news stories of the last 24 hours for each subject matrix. Do not output placeholder filler text. Even if data seems sparse, find the most impactful events inside the text.
 
     Follow this HTML layout structure precisely, using modern inline CSS:
 
@@ -90,7 +77,7 @@ def generate_expanded_matrix_html(raw_news):
         <!-- EXECUTIVE OVERVIEW CARD -->
         <div style="background-color:#eff6ff; border-left:4px solid #3b82f6; padding:15px; border-radius:0 8px 8px 0; margin-bottom:30px;">
             <h3 style="margin:0 0 8px 0; font-size:14px; text-transform:uppercase; letter-spacing:0.05em; color:#1d4ed8; font-weight:700;">Executive Summary</h3>
-            <p style="margin:0; font-size:14px; line-height:1.6; color:#1e3a8a;">[INSERT 2-3 SENTENCE GLOBAL IMPACT SUMMARY OF THE LAST 24 HOURS HERE IN ENGLISH]</p>
+            <p style="margin:0; font-size:14px; line-height:1.6; color:#1e3a8a;">[INSERT 2-3 SENTENCE GLOBAL IMPACT SUMMARY OF THE BREAKING MOVES HERE IN ENGLISH]</p>
         </div>
 
         <!-- SECTION 1: FINANCE -->
@@ -100,12 +87,12 @@ def generate_expanded_matrix_html(raw_news):
             
             <h4 style="margin:10px 0 10px 0; font-size:15px; color:#334155; border-bottom:1px solid #f1f5f9; padding-bottom:4px;">🇹🇼 Taiwan Market (繁體中文)</h4>
             <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
-                [INSERT EXACTLY 3 CHOSEN TOP STORIES FROM PAST 24H IN TRADITIONAL CHINESE. FORMAT: <style="margin-bottom:8px;"><strong>Headline Title</strong> — Description summary sentence. <a href="URL" style="color:#2563eb; text-decoration:none; font-size:12px; font-weight:600;">[來源連結]</a></style>]
+                [INSERT EXACTLY 3 CHOSEN TOP STORIES FROM PAST 24H IN TRADITIONAL CHINESE. FORMAT EACH AS: <li style="margin-bottom:8px;"><strong>Headline Title</strong> — Description summary sentence. <a href="URL" style="color:#2563eb; text-decoration:none; font-size:12px; font-weight:600;">[來源連結]</a></li>]
             </ul>
             
             <h4 style="margin:20px 0 10px 0; font-size:15px; color:#334155; border-bottom:1px solid #f1f5f9; padding-bottom:4px;">🇺🇸 United States Market (English)</h4>
             <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
-                [INSERT EXACTLY 3 CHOSEN TOP STORIES FROM PAST 24H IN ENGLISH. FORMAT: <style="margin-bottom:8px;"><strong>Headline Title</strong> — Description summary sentence. <a href="URL" style="color:#2563eb; text-decoration:none; font-size:12px; font-weight:600;">[Source Link]</a></style>]
+                [INSERT EXACTLY 3 CHOSEN TOP STORIES FROM PAST 24H IN ENGLISH. FORMAT EACH AS: <li style="margin-bottom:8px;"><strong>Headline Title</strong> — Description summary sentence. <a href="URL" style="color:#2563eb; text-decoration:none; font-size:12px; font-weight:600;">[Source Link]</a></li>]
             </ul>
         </div>
 
@@ -116,12 +103,12 @@ def generate_expanded_matrix_html(raw_news):
             
             <h4 style="margin:10px 0 10px 0; font-size:15px; color:#334155; border-bottom:1px solid #f1f5f9; padding-bottom:4px;">🇹🇼 Taiwan Tech Ecosystem (繁體中文)</h4>
             <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
-                [INSERT EXACTLY 3 CHOSEN TOP STORIES FROM PAST 24H IN TRADITIONAL CHINESE WITH HTML LINK]
+                [INSERT EXACTLY 3 CHOSEN TOP STORIES FROM PAST 24H IN TRADITIONAL CHINESE WITH HTML LINK HERE]
             </ul>
             
             <h4 style="margin:20px 0 10px 0; font-size:15px; color:#334155; border-bottom:1px solid #f1f5f9; padding-bottom:4px;">🇺🇸 United States Innovation (English)</h4>
             <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
-                [INSERT EXACTLY 3 CHOSEN TOP STORIES FROM PAST 24H IN ENGLISH WITH HTML LINK]
+                [INSERT EXACTLY 3 CHOSEN ENGLISH BULLETS WITH HTML LINK HERE]
             </ul>
         </div>
 
@@ -132,25 +119,25 @@ def generate_expanded_matrix_html(raw_news):
             
             <h4 style="margin:10px 0 10px 0; font-size:15px; color:#334155; border-bottom:1px solid #f1f5f9; padding-bottom:4px;">🇹🇼 Taiwan Telco Networks (繁體中文)</h4>
             <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
-                [INSERT EXACTLY 3 CHOSEN TOP STORIES FROM PAST 24H IN TRADITIONAL CHINESE WITH HTML LINK]
+                [INSERT EXACTLY 3 CHOSEN TRADITIONAL CHINESE BULLETS WITH HTML LINK HERE]
             </ul>
             
             <h4 style="margin:20px 0 10px 0; font-size:15px; color:#334155; border-bottom:1px solid #f1f5f9; padding-bottom:4px;">🇺🇸 United States Infrastructure (English)</h4>
             <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
-                [INSERT EXACTLY 3 CHOSEN TOP STORIES FROM PAST 24H IN ENGLISH WITH HTML LINK]
+                [INSERT EXACTLY 3 CHOSEN ENGLISH BULLETS WITH HTML LINK HERE]
             </ul>
         </div>
 
     </div>
 
     CRITICAL INSTRUCTIONS:
-    - Never break the layout shell template structure. Substitute placeholders with actual calculated contents.
-    - Select only the most critical, top-tier occurrences that happened strictly inside the last 24 hours.
-    - Ensure EVERY bullet entry contains a clear structural title wrapped in <strong> tags, an impact summary sentence, and its anchor link.
-    - Omit any wrapper ```html markdown syntax tags. Return only the raw inner string content.
+    - Never break the shell layout block template. Substitute placeholders with true analytical insights.
+    - Pick only the absolute highest-impact breaking updates from the last 24 hours. Do not hallucinate or list empty notices.
+    - Language Enforcement: Taiwan content sections must be in native Traditional Chinese (繁體中文). USA sections and the Overview must be in English.
+    - Apply professional inline email CSS styling. Omit all ```html wrappers. Output only raw inner HTML.
 
-    Raw data pool source feed from last 24 hours:
-    {raw_news}
+    Raw data pool from last 24 hours:
+    {raw_news_payload}
     """
     
     max_retries = 3
@@ -199,12 +186,13 @@ def main():
         print("❌ Configuration Missing.")
         return
 
-    print("🛰️ Mining real-time data logs across endpoints from the last 24 hours...")
+    print("🛰️ Harvesting targeted, clean category arrays from past 24 hours...")
     master_feed = ""
-    for name, query in COUNTRIES.items():
-        master_feed += f"\n=== {name.upper()} DATA INTERCEPT ===\n" + fetch_targeted_news(query) + "\n"
+    for category_name, query_string in CATEGORIES.items():
+        master_feed += f"\n=== BATCH: {category_name.upper()} ===\n"
+        master_feed += fetch_category_news(query_string) + "\n"
         
-    print("🧠 Chief Editor Model: Distilling data pool into top 3 latest major occurrences...")
+    print("🧠 Chief Editor Model: Extracting the top 3 highest-impact entries...")
     report_html = generate_expanded_matrix_html(master_feed)
     
     send_resend_email(report_html)
