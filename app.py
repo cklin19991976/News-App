@@ -13,18 +13,18 @@ RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL", "your_account@gmail.com")
 
 resend.api_key = os.environ.get("RESEND_API_KEY", "YOUR_RESEND_API_KEY")
 
-# Taiwan stock watchlist (Symbol: Display Name)
+# Updated Watchlist: Set 'market' to "otc" for TPEx stocks like 4772, or "tse" for TWSE stocks
 TW_WATCHLIST = {
-    "t00": "加權指數",
-    "0050": "台灣50",
-    "2330": "台積電",
-    "00675L": "富邦正2",
-    "00631L": "元大正2",
-    "00662": "富邦QQQ",
-    "4772": "台特化",
-    "1215": "卜蜂",
-    "2912": "統一超",
-    "1232": "大統益",
+    "t00": {"name": "加權指數", "market": "tse"},
+    "2330": {"name": "台積電", "market": "tse"},
+    "0050": {"name": "台灣50", "market": "tse"},
+    "00675L": {"name": "富邦正2", "market": "tse"},
+    "00631L": {"name": "元大正2", "market": "tse"},
+    "00662": {"name": "富邦QQQ", "market": "tse"},
+    "1215": {"name": "卜蜂", "market": "tse"},
+    "2912": {"name": "統一超", "market": "tse"},
+    "1232": {"name": "大統益", "market": "tse"},
+    "4772": {"name": "台特化", "market": "otc"},
 }
 
 CATEGORIES = {
@@ -72,11 +72,11 @@ def fetch_category_news(query_string):
         return f"Error gathering data: {e}"
 
 def fetch_taiwan_stock_summary(watchlist):
-    """Fetches latest daily price range, total volume, and institutional net volume from TWSE."""
+    """Fetches quotes and institutional volume supporting both TWSE (上市) and TPEx (上櫃)."""
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
-    # 1. Fetch Real-time / Daily Quote & Volume
-    symbols_query = "|".join([f"tse_{code}.tw" for code in watchlist.keys()])
+    # 1. Fetch Real-time / Daily Quotes (Handles both tse_ and otc_ channels)
+    symbols_query = "|".join([f"{meta['market']}_{code}.tw" for code, meta in watchlist.items()])
     quote_url = f"https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch={symbols_query}&json=1&delay=0"
     
     quotes = {}
@@ -87,7 +87,7 @@ def fetch_taiwan_stock_summary(watchlist):
             for item in q_data:
                 code = item.get("c")
                 close_price = item.get("z", "-")
-                if close_price == "-" and item.get("y"):  # Fallback to yesterday close if unpriced
+                if close_price == "-" and item.get("y"):
                     close_price = item.get("y")
                 
                 quotes[code] = {
@@ -95,44 +95,56 @@ def fetch_taiwan_stock_summary(watchlist):
                     "high": item.get("h", "-"),
                     "low": item.get("l", "-"),
                     "close": close_price,
-                    "volume_lots": f"{int(item.get('v', 0)):,}" if item.get('v', '').isdigit() else "-"
+                    "volume_lots": f"{int(item.get('v', 0)):,}" if str(item.get('v', '')).isdigit() else "-"
                 }
     except Exception as e:
-        print(f"⚠️ Error fetching TWSE quotes: {e}")
+        print(f"⚠️ Error fetching MIS quotes: {e}")
 
-    # 2. Fetch Institutional Trading Summary (三大法人買賣超)
-    inst_url = "https://www.twse.com.tw/rwd/zh/fund/T86?response=json"
+    # 2. Fetch Institutional Trading Summary (Both TWSE and TPEx)
     institutional_data = {}
+    
+    # 2A. TWSE Listed (上市)
     try:
-        inst_resp = requests.get(inst_url, headers=headers, timeout=10)
-        if inst_resp.status_code == 200:
-            raw_inst = inst_resp.json()
-            data_rows = raw_inst.get("data", [])
+        twse_url = "https://www.twse.com.tw/rwd/zh/fund/T86?response=json"
+        twse_resp = requests.get(twse_url, headers=headers, timeout=10)
+        if twse_resp.status_code == 200:
+            data_rows = twse_resp.json().get("data", [])
             for row in data_rows:
                 code = row[0].strip()
                 if code in watchlist:
-                    # In TWSE T86 format:
-                    # row[4] = Foreign Net Buy/Sell, row[10] = Trust Net, row[11] = Dealer Net, row[18] = Total Institutional Net
                     try:
-                        institutional_data[code] = {
-                            "foreign_net_lots": f"{int(row[4].replace(',', '')) // 1000:+,} 張",
-                            "trust_net_lots": f"{int(row[10].replace(',', '')) // 1000:+,} 張",
-                            "dealer_net_lots": f"{int(row[11].replace(',', '')) // 1000:+,} 張",
-                            "total_inst_net_lots": f"{int(row[18].replace(',', '')) // 1000:+,} 張"
-                        }
+                        net_shares = int(row[18].replace(',', ''))
+                        institutional_data[code] = f"{net_shares // 1000:+,} 張"
                     except (ValueError, IndexError):
-                        institutional_data[code] = {"total_inst_net_lots": "N/A"}
+                        institutional_data[code] = "N/A"
     except Exception as e:
-        print(f"⚠️ Error fetching institutional trading: {e}")
+        print(f"⚠️ Error fetching TWSE institutional data: {e}")
+
+    # 2B. TPEx OTC (上櫃 - e.g., 4772)
+    try:
+        tpex_url = "https://www.tpex.org.tw/web/stock/3insti/daily_trading/3itrade_hedge_result.php?l=zh-tw&t=D"
+        tpex_resp = requests.get(tpex_url, headers=headers, timeout=10)
+        if tpex_resp.status_code == 200:
+            tpex_rows = tpex_resp.json().get("aaData", [])
+            for row in tpex_rows:
+                code = row[0].strip()
+                if code in watchlist:
+                    try:
+                        net_shares = int(row[14].replace(',', ''))
+                        institutional_data[code] = f"{net_shares // 1000:+,} 張"
+                    except (ValueError, IndexError):
+                        institutional_data[code] = "N/A"
+    except Exception as e:
+        print(f"⚠️ Error fetching TPEx institutional data: {e}")
 
     # 3. Construct HTML Table
     table_rows = ""
-    for code, name in watchlist.items():
+    for code, meta in watchlist.items():
+        name = meta["name"]
         q = quotes.get(code, {"high": "-", "low": "-", "close": "-", "volume_lots": "-"})
-        inst = institutional_data.get(code, {"foreign_net_lots": "-", "trust_net_lots": "-", "total_inst_net_lots": "-"})
+        total_inst = institutional_data.get(code, "-")
         
         price_range = f"{q['low']} ~ {q['high']}"
-        total_inst = inst.get("total_inst_net_lots", "-")
         inst_color = "#dc2626" if "+" in str(total_inst) else "#16a34a" if "-" in str(total_inst) else "#475569"
 
         table_rows += f"""
@@ -145,7 +157,7 @@ def fetch_taiwan_stock_summary(watchlist):
         </tr>
         """
 
-    stock_html_section = f"""
+    return f"""
     <div style="background-color:#ffffff; border-radius:8px; border:1px solid #e2e8f0; padding:20px; margin-bottom:25px;">
         <div style="display:inline-block; background-color:#fef3c7; color:#92400e; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:12px; text-transform:uppercase;">📊 Key Taiwan Equities Tracking (三大法人與價量)</div>
         <table style="width:100%; border-collapse: collapse; margin-top:8px;">
@@ -162,7 +174,7 @@ def fetch_taiwan_stock_summary(watchlist):
                 {table_rows}
             </tbody>
         </table>
-        <p style="font-size: 11px; color: #94a3b8; margin: 8px 0 0 0; text-align: right;">* 買賣超單位：張 (+買超 / -賣超)。數據來源：台灣證券交易所 (TWSE)</p>
+        <p style="font-size: 11px; color: #94a3b8; margin: 8px 0 0 0; text-align: right;">* 買賣超單位：張 (+買超 / -賣超)。數據來源：台灣證券交易所 (TWSE) & 證券櫃檯買賣中心 (TPEx)</p>
     </div>
     """
     return stock_html_section
