@@ -15,10 +15,16 @@ resend.api_key = os.environ.get("RESEND_API_KEY", "YOUR_RESEND_API_KEY")
 
 # Taiwan stock watchlist (Symbol: Display Name)
 TW_WATCHLIST = {
-    "2330": "台積電 (TSMC)",
-    "2317": "鴻海 (Foxconn)",
-    "2454": "聯發科 (MediaTek)",
-    "2308": "台達電 (Delta)",
+    "t00": "加權指數",
+    "0050": "台灣50",
+    "2330": "台積電",
+    "00675L": "富邦正2",
+    "00631L": "元大正2",
+    "00662": "富邦QQQ",
+    "4772": "台特化",
+    "1215": "卜蜂",
+    "2912": "統一超",
+    "1232": "大統益",
 }
 
 CATEGORIES = {
