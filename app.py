@@ -14,11 +14,16 @@ RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL", "your_account@gmail.com")
 resend.api_key = os.environ.get("RESEND_API_KEY", "YOUR_RESEND_API_KEY")
 
 TW_WATCHLIST = {
-    "t00": {"name": "加權指數 (TAIEX)", "market": "tse", "yf_ticker": "^TWII"},
-    "2330": {"name": "台積電 (TSMC)", "market": "tse", "yf_ticker": "2330.TW"},
-    "2317": {"name": "鴻海 (Foxconn)", "market": "tse", "yf_ticker": "2317.TW"},
-    "2454": {"name": "聯發科 (MediaTek)", "market": "tse", "yf_ticker": "2454.TW"},
-    "4772": {"name": "台特化 (TSCS)", "market": "otc", "yf_ticker": "4772.TWO"},
+    "t00": {"name": "加權指數", "market": "tse", "yf_ticker": "^TWII"},
+    "2330": {"name": "台積電", "market": "tse", "yf_ticker": "2330.TW"},
+    "0050": {"name": "台灣50", "market": "tse", "yf_ticker": "0050.TW"},
+    "00675L": {"name": "富邦正2", "market": "tse", "yf_ticker": "00675L.TW"},
+    "00631L": {"name": "元大正2", "market": "tse", "yf_ticker": "00631L.TW"},
+    "00662": {"name": "富邦QQQ", "market": "tse", "yf_ticker": "00662.TW"},
+    "1215": {"name": "卜蜂", "market": "tse", "yf_ticker": "1215.TW"},
+    "2912": {"name": "統一超", "market": "tse", "yf_ticker": "2912.TW"},
+    "1232": {"name": "大統益", "market": "tse", "yf_ticker": "1232.TW"},
+    "4772": {"name": "台特化", "market": "otc", "yf_ticker": "4772.TWO"},
 }
 
 CATEGORIES = {
@@ -452,7 +457,7 @@ def send_resend_email(html_content):
         params = {
             "from": "NewsEngine <onboarding@resend.dev>",
             "to": [RECIPIENT_EMAIL],
-            "subject": "🌟 24-Hour Executive Strategic Curation Digest & Technical Market Tracker",
+            "subject": "🌟 24-Hour Finance News & Market Tracker",
             "html": html_content,
         }
         
