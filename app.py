@@ -353,7 +353,7 @@ def send_resend_email(html_content):
         params = {
             "from": "NewsEngine <onboarding@resend.dev>",
             "to": [RECIPIENT_EMAIL],
-            "subject": "🌟 24-Hour Executive Strategic Curation Digest & Market Tracker",
+            "subject": "🌟 24-Hour Finance News & Market Tracker",
             "html": html_content,
         }
         
