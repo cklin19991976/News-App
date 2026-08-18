@@ -13,7 +13,7 @@ RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL", "your_account@gmail.com")
 
 resend.api_key = os.environ.get("RESEND_API_KEY", "YOUR_RESEND_API_KEY")
 
-# Taiwan stock watchlist (market: 'tse' for TWSE, 'otc' for TPEx)
+# Taiwan stock watchlist (market: 'tse' for TWSE, 'otc' for TPEx, yf_ticker for historical MA calculation)
 TW_WATCHLIST = {
     "t00": {"name": "加權指數", "market": "tse"},
     "2330": {"name": "台積電", "market": "tse"},
@@ -25,7 +25,7 @@ TW_WATCHLIST = {
     "2912": {"name": "統一超", "market": "tse"},
     "1232": {"name": "大統益", "market": "tse"},
     "4772": {"name": "台特化", "market": "otc"},
-}
+    }
 
 CATEGORIES = {
     "Taiwan_Finance": "taiwan AND (market OR finance OR stock)",
@@ -73,19 +73,64 @@ def fetch_category_news(query_string):
 
 def get_latest_settled_dates(lookback_days=5):
     """Generates a list of recent date strings (YYYYMMDD and YYYY/MM/DD) to query backwards."""
-    # Convert UTC to Taiwan Time (UTC+8)
     tw_now = datetime.utcnow() + timedelta(hours=8)
     dates = []
     for i in range(lookback_days):
         dt = tw_now - timedelta(days=i)
         dates.append({
-            "twse": dt.strftime('%Y%m%d'),          # TWSE format: 20260818
-            "tpex": f"{dt.year - 1911}/{dt.strftime('%m/%d')}"  # TPEx ROC format: 115/08/18
+            "twse": dt.strftime('%Y%m%d'),
+            "tpex": f"{dt.year - 1911}/{dt.strftime('%m/%d')}"
         })
     return dates
 
+def fetch_stock_moving_averages(ticker):
+    """Fetches historical closing data and computes 5, 10, 20, 60, 120, and 240 MA with crossover detection."""
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    # Pull 2 years of daily data from Yahoo Finance API endpoint
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=2y&interval=1d"
+    
+    ma_windows = [5, 10, 20, 60, 120, 240]
+    result = {f"MA{w}": {"val": "-", "cross": None} for w in ma_windows}
+    
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return result
+        
+        data = resp.json()
+        closes = data["chart"]["result"][0]["indicators"]["quote"][0]["close"]
+        clean_closes = [c for c in closes if c is not None]
+        
+        if len(clean_closes) < 2:
+            return result
+            
+        curr_price = clean_closes[-1]
+        prev_price = clean_closes[-2]
+        
+        for w in ma_windows:
+            if len(clean_closes) >= w:
+                curr_ma = sum(clean_closes[-w:]) / w
+                prev_ma = sum(clean_closes[-(w + 1):-1]) / w
+                
+                cross = None
+                # Bullish Breakout (Golden Cross over MA)
+                if prev_price <= prev_ma and curr_price > curr_ma:
+                    cross = "UP"
+                # Bearish Breakdown (Death Cross below MA)
+                elif prev_price >= prev_ma and curr_price < curr_ma:
+                    cross = "DOWN"
+                    
+                result[f"MA{w}"] = {
+                    "val": f"{curr_ma:,.2f}",
+                    "cross": cross
+                }
+    except Exception as e:
+        print(f"⚠️ Error computing MA for {ticker}: {e}")
+        
+    return result
+
 def fetch_taiwan_stock_summary(watchlist):
-    """Fetches real quotes and parses both Foreign Investor (外資) and Total Institutional (三大法人) net trading."""
+    """Fetches real quotes, institutional flows, and moving average matrix."""
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
     # 1. Fetch Real-time / Daily Quotes from MIS API
@@ -181,7 +226,12 @@ def fetch_taiwan_stock_summary(watchlist):
         except Exception:
             continue
 
-    # 4. Construct HTML Component with 外資 and 三大法人 columns
+    # 4. Fetch and compute Moving Averages for all targets
+    ma_results = {}
+    for code, meta in watchlist.items():
+        ma_results[code] = fetch_stock_moving_averages(meta["yf_ticker"])
+
+    # 5. Build Stock Main Summary Table
     table_rows = ""
     for code, meta in watchlist.items():
         name = meta["name"]
@@ -215,16 +265,44 @@ def fetch_taiwan_stock_summary(watchlist):
         </tr>
         """
 
-    return f"""
-    <div style="background-color:#ffffff; border-radius:8px; border:1px solid #e2e8f0; padding:20px; margin-bottom:25px;">
-        <div style="display:inline-block; background-color:#fef3c7; color:#92400e; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:12px; text-transform:uppercase;">📊 Key Taiwan Equities Tracking (台股行情與法人動向)</div>
+    # 6. Build Moving Average & Cross-Alert Table
+    ma_table_rows = ""
+    for code, meta in watchlist.items():
+        name = meta["name"]
+        ma = ma_results.get(code, {})
+        
+        def format_ma_cell(ma_dict):
+            val = ma_dict.get("val", "-")
+            cross = ma_dict.get("cross")
+            if cross == "UP":
+                return f"""<span style="background-color:#fee2e2; color:#b91c1c; padding:2px 4px; border-radius:4px; font-weight:700;">{val} ↑突破</span>"""
+            elif cross == "DOWN":
+                return f"""<span style="background-color:#dcfce7; color:#15803d; padding:2px 4px; border-radius:4px; font-weight:700;">{val} ↓跌破</span>"""
+            return f"""<span style="color:#334155;">{val}</span>"""
+
+        ma_table_rows += f"""
+        <tr style="border-bottom: 1px solid #f1f5f9; text-align: center; font-size: 12px;">
+            <td style="padding: 8px 4px; text-align: left; font-weight: 600;">{name}</td>
+            <td style="padding: 8px 4px;">{format_ma_cell(ma.get('MA5', {}))}</td>
+            <td style="padding: 8px 4px;">{format_ma_cell(ma.get('MA10', {}))}</td>
+            <td style="padding: 8px 4px;">{format_ma_cell(ma.get('MA20', {}))}</td>
+            <td style="padding: 8px 4px;">{format_ma_cell(ma.get('MA60', {}))}</td>
+            <td style="padding: 8px 4px;">{format_ma_cell(ma.get('MA120', {}))}</td>
+            <td style="padding: 8px 4px;">{format_ma_cell(ma.get('MA240', {}))}</td>
+        </tr>
+        """
+
+    combined_stock_html = f"""
+    <!-- Table 1: Equities & Institutional Flows -->
+    <div style="background-color:#ffffff; border-radius:8px; border:1px solid #e2e8f0; padding:20px; margin-bottom:20px;">
+        <div style="display:inline-block; background-color:#fef3c7; color:#92400e; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:12px; text-transform:uppercase;">📊 Key Taiwan Equities (台股行情與法人動向)</div>
         <table style="width:100%; border-collapse: collapse; margin-top:8px;">
             <thead>
                 <tr style="background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; font-size: 12px; color: #64748b;">
                     <th style="padding: 8px 6px; text-align: left;">標的名稱</th>
                     <th style="padding: 8px 6px;">收盤價</th>
                     <th style="padding: 8px 6px;">漲跌幅</th>
-                    <th style="padding: 8px 6px;">成交金額 / 成交量</th>
+                    <th style="padding: 8px 6px;">成交金額 / 量</th>
                     <th style="padding: 8px 6px;">外資買賣超</th>
                     <th style="padding: 8px 6px;">三大法人買賣超</th>
                 </tr>
@@ -233,12 +311,36 @@ def fetch_taiwan_stock_summary(watchlist):
                 {table_rows}
             </tbody>
         </table>
-        <p style="font-size: 11px; color: #94a3b8; margin: 8px 0 0 0; text-align: right;">* 買賣超單位：張 (+買超 / -賣超)。大盤成交量為總成交金額。數據來源：TWSE / TPEx</p>
+        <p style="font-size: 11px; color: #94a3b8; margin: 8px 0 0 0; text-align: right;">* 買賣超單位：張 (+買超 / -賣超)。大盤成交量為總成交金額。</p>
+    </div>
+
+    <!-- Table 2: Moving Average Matrix & Crossover Monitor -->
+    <div style="background-color:#ffffff; border-radius:8px; border:1px solid #e2e8f0; padding:20px; margin-bottom:25px;">
+        <div style="display:inline-block; background-color:#e0e7ff; color:#3730a3; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:12px; text-transform:uppercase;">📈 Technical Moving Averages & Cross Alerts (均線穿越指標)</div>
+        <table style="width:100%; border-collapse: collapse; margin-top:8px;">
+            <thead>
+                <tr style="background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; font-size: 11px; color: #64748b;">
+                    <th style="padding: 6px 4px; text-align: left;">標的</th>
+                    <th style="padding: 6px 4px;">5MA (週)</th>
+                    <th style="padding: 6px 4px;">10MA (雙週)</th>
+                    <th style="padding: 6px 4px;">20MA (月)</th>
+                    <th style="padding: 6px 4px;">60MA (季)</th>
+                    <th style="padding: 6px 4px;">120MA (半年)</th>
+                    <th style="padding: 6px 4px;">240MA (年)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {ma_table_rows}
+            </tbody>
+        </table>
+        <p style="font-size: 11px; color: #94a3b8; margin: 8px 0 0 0; text-align: right;">* 標示說明：<span style="color:#b91c1c; font-weight:bold;">↑突破</span>（收盤價向上突破該均線）；<span style="color:#15803d; font-weight:bold;">↓跌破</span>（收盤價向下跌破該均線）。</p>
     </div>
     """
+    
+    return combined_stock_html
 
 def generate_expanded_matrix_html(raw_news_payload):
-    """Uses Gemini to generate the curated news matrix with clickable source links, preserving the stock placeholder."""
+    """Uses Gemini to generate the curated news matrix, strictly preserving the stock placeholder."""
     client = genai.Client(api_key=GEMINI_API_KEY)
     
     prompt = f"""
@@ -367,7 +469,7 @@ def main():
         print("❌ Configuration Missing.")
         return
 
-    print("📈 Fetching Taiwan stock price, changes, NTD volume, and institutional data...")
+    print("📈 Fetching Taiwan stock quotes, institutional data, and moving average crossovers...")
     stock_section_html = fetch_taiwan_stock_summary(TW_WATCHLIST)
 
     print("🛰️ Harvesting targeted news category arrays from past 24 hours...")
@@ -379,11 +481,9 @@ def main():
     print("🧠 Chief Editor Model: Extracting top stories and formatting matrix...")
     report_html = generate_expanded_matrix_html(master_feed)
     
-    # Directly inject the exact python-generated stock table into the template
     if "<!-- STOCK_SECTION_PLACEHOLDER -->" in report_html:
         final_email_html = report_html.replace("<!-- STOCK_SECTION_PLACEHOLDER -->", stock_section_html)
     else:
-        # Fallback in case LLM removed comment
         final_email_html = report_html + stock_section_html
 
     send_resend_email(final_email_html)
