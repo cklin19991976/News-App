@@ -13,7 +13,7 @@ RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL", "your_account@gmail.com")
 
 resend.api_key = os.environ.get("RESEND_API_KEY", "YOUR_RESEND_API_KEY")
 
-# Updated Watchlist: Set 'market' to "otc" for TPEx stocks like 4772, or "tse" for TWSE stocks
+# Taiwan stock watchlist (market: 'tse' for TWSE, 'otc' for TPEx)
 TW_WATCHLIST = {
     "t00": {"name": "加權指數", "market": "tse"},
     "2330": {"name": "台積電", "market": "tse"},
@@ -72,10 +72,10 @@ def fetch_category_news(query_string):
         return f"Error gathering data: {e}"
 
 def fetch_taiwan_stock_summary(watchlist):
-    """Fetches quotes and institutional volume supporting both TWSE (上市) and TPEx (上櫃)."""
+    """Fetches quote, 2-decimal close, change, NTD/lot volume, and institutional trading."""
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
-    # 1. Fetch Real-time / Daily Quotes (Handles both tse_ and otc_ channels)
+    # 1. Fetch Real-time / Daily Quotes from MIS API
     symbols_query = "|".join([f"{meta['market']}_{code}.tw" for code, meta in watchlist.items()])
     quote_url = f"https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch={symbols_query}&json=1&delay=0"
     
@@ -86,24 +86,53 @@ def fetch_taiwan_stock_summary(watchlist):
             q_data = q_resp.json().get("msgArray", [])
             for item in q_data:
                 code = item.get("c")
-                close_price = item.get("z", "-")
-                if close_price == "-" and item.get("y"):
-                    close_price = item.get("y")
-                
+                prev_close = float(item.get("y", 0)) if item.get("y") and item.get("y") != "-" else None
+                close_raw = item.get("z", "-")
+                if (close_raw == "-" or not close_raw) and prev_close:
+                    close_val = prev_close
+                else:
+                    try:
+                        close_val = float(close_raw)
+                    except ValueError:
+                        close_val = None
+
+                # Calculate price change and percentage
+                change_str = "-"
+                change_pct_str = ""
+                diff_val = 0
+                if close_val is not None and prev_close is not None and prev_close > 0:
+                    diff_val = close_val - prev_close
+                    pct_val = (diff_val / prev_close) * 100
+                    change_str = f"{diff_val:+.2f}"
+                    change_pct_str = f"({pct_val:+.2f}%)"
+
                 quotes[code] = {
-                    "open": item.get("o", "-"),
-                    "high": item.get("h", "-"),
-                    "low": item.get("l", "-"),
-                    "close": close_price,
+                    "close": f"{close_val:,.2f}" if close_val is not None else "-",
+                    "diff_val": diff_val,
+                    "change": f"{change_str} {change_pct_str}".strip(),
                     "volume_lots": f"{int(item.get('v', 0)):,}" if str(item.get('v', '')).isdigit() else "-"
                 }
     except Exception as e:
         print(f"⚠️ Error fetching MIS quotes: {e}")
 
-    # 2. Fetch Institutional Trading Summary (Both TWSE and TPEx)
+    # 2. Fetch TAIEX Total Daily Turnover in NTD (新台幣成交金額)
+    taiex_ntd_volume = None
+    try:
+        fmtqik_url = "https://www.twse.com.tw/rwd/zh/afterTrading/FMTQIK?response=json"
+        fmt_resp = requests.get(fmtqik_url, headers=headers, timeout=10)
+        if fmt_resp.status_code == 200:
+            fmt_data = fmt_resp.json().get("data", [])
+            if fmt_data:
+                latest_day = fmt_data[-1]  # row: [Date, Trade Volume, Trade Value (NTD), ...]
+                turnover_ntd = int(latest_day[2].replace(',', ''))
+                taiex_ntd_volume = f"NT$ {turnover_ntd / 1e8:,.2f} 億"
+    except Exception as e:
+        print(f"⚠️ Error fetching TAIEX NTD turnover: {e}")
+
+    # 3. Fetch Institutional Trading (三大法人買賣超)
     institutional_data = {}
     
-    # 2A. TWSE Listed (上市)
+    # 3A. TWSE Listed (上市)
     try:
         twse_url = "https://www.twse.com.tw/rwd/zh/fund/T86?response=json"
         twse_resp = requests.get(twse_url, headers=headers, timeout=10)
@@ -116,11 +145,11 @@ def fetch_taiwan_stock_summary(watchlist):
                         net_shares = int(row[18].replace(',', ''))
                         institutional_data[code] = f"{net_shares // 1000:+,} 張"
                     except (ValueError, IndexError):
-                        institutional_data[code] = "N/A"
+                        institutional_data[code] = "-"
     except Exception as e:
         print(f"⚠️ Error fetching TWSE institutional data: {e}")
 
-    # 2B. TPEx OTC (上櫃 - e.g., 4772)
+    # 3B. TPEx OTC (上櫃 - e.g., 4772)
     try:
         tpex_url = "https://www.tpex.org.tw/web/stock/3insti/daily_trading/3itrade_hedge_result.php?l=zh-tw&t=D"
         tpex_resp = requests.get(tpex_url, headers=headers, timeout=10)
@@ -133,40 +162,50 @@ def fetch_taiwan_stock_summary(watchlist):
                         net_shares = int(row[14].replace(',', ''))
                         institutional_data[code] = f"{net_shares // 1000:+,} 張"
                     except (ValueError, IndexError):
-                        institutional_data[code] = "N/A"
+                        institutional_data[code] = "-"
     except Exception as e:
         print(f"⚠️ Error fetching TPEx institutional data: {e}")
 
-    # 3. Construct HTML Table
+    # 4. Build Stock HTML Component
     table_rows = ""
     for code, meta in watchlist.items():
         name = meta["name"]
-        q = quotes.get(code, {"high": "-", "low": "-", "close": "-", "volume_lots": "-"})
-        total_inst = institutional_data.get(code, "-")
+        q = quotes.get(code, {"close": "-", "diff_val": 0, "change": "-", "volume_lots": "-"})
         
-        price_range = f"{q['low']} ~ {q['high']}"
-        inst_color = "#dc2626" if "+" in str(total_inst) else "#16a34a" if "-" in str(total_inst) else "#475569"
+        # Format volume: NTD for Index, Lots (張) for individual equities
+        if code == "t00":
+            volume_display = taiex_ntd_volume if taiex_ntd_volume else f"{q['volume_lots']} 張"
+            total_inst = "市場指數無個股法人"
+            inst_color = "#64748b"
+        else:
+            volume_display = f"{q['volume_lots']} 張"
+            total_inst = institutional_data.get(code, "整理中")
+            inst_color = "#dc2626" if "+" in total_inst else "#16a34a" if "-" in total_inst else "#475569"
+
+        # Price change color
+        diff_val = q.get("diff_val", 0)
+        change_color = "#dc2626" if diff_val > 0 else "#16a34a" if diff_val < 0 else "#475569"
 
         table_rows += f"""
         <tr style="border-bottom: 1px solid #f1f5f9; text-align: center; font-size: 13px;">
             <td style="padding: 10px 6px; text-align: left; font-weight: 600;">{name} ({code})</td>
             <td style="padding: 10px 6px; font-weight: bold; color: #0f172a;">{q['close']}</td>
-            <td style="padding: 10px 6px; color: #64748b;">{price_range}</td>
-            <td style="padding: 10px 6px; color: #334155;">{q['volume_lots']} 張</td>
+            <td style="padding: 10px 6px; color: {change_color}; font-weight: 600;">{q['change']}</td>
+            <td style="padding: 10px 6px; color: #334155;">{volume_display}</td>
             <td style="padding: 10px 6px; color: {inst_color}; font-weight: 600;">{total_inst}</td>
         </tr>
         """
 
     return f"""
     <div style="background-color:#ffffff; border-radius:8px; border:1px solid #e2e8f0; padding:20px; margin-bottom:25px;">
-        <div style="display:inline-block; background-color:#fef3c7; color:#92400e; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:12px; text-transform:uppercase;">📊 Key Taiwan Equities Tracking (三大法人與價量)</div>
+        <div style="display:inline-block; background-color:#fef3c7; color:#92400e; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:12px; text-transform:uppercase;">📊 Key Taiwan Equities Tracking (台股行情與三大法人)</div>
         <table style="width:100%; border-collapse: collapse; margin-top:8px;">
             <thead>
                 <tr style="background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; font-size: 12px; color: #64748b;">
                     <th style="padding: 8px 6px; text-align: left;">標的名稱</th>
                     <th style="padding: 8px 6px;">收盤價</th>
-                    <th style="padding: 8px 6px;">當日區間 (L~H)</th>
-                    <th style="padding: 8px 6px;">成交量</th>
+                    <th style="padding: 8px 6px;">漲跌幅</th>
+                    <th style="padding: 8px 6px;">成交金額 / 成交量</th>
                     <th style="padding: 8px 6px;">三大法人買賣超</th>
                 </tr>
             </thead>
@@ -174,13 +213,12 @@ def fetch_taiwan_stock_summary(watchlist):
                 {table_rows}
             </tbody>
         </table>
-        <p style="font-size: 11px; color: #94a3b8; margin: 8px 0 0 0; text-align: right;">* 買賣超單位：張 (+買超 / -賣超)。數據來源：台灣證券交易所 (TWSE) & 證券櫃檯買賣中心 (TPEx)</p>
+        <p style="font-size: 11px; color: #94a3b8; margin: 8px 0 0 0; text-align: right;">* 買賣超單位：張 (+買超 / -賣超)。大盤成交量為總成交金額。數據來源：TWSE / TPEx</p>
     </div>
     """
-    return stock_html_section
 
-def generate_expanded_matrix_html(raw_news_payload, stock_section_html):
-    """Uses Gemini to filter, force-rank, and construct the final briefing with stock tracking embedded."""
+def generate_expanded_matrix_html(raw_news_payload):
+    """Uses Gemini to generate the curated news matrix, preserving the stock placeholder."""
     client = genai.Client(api_key=GEMINI_API_KEY)
     
     prompt = f"""
@@ -200,8 +238,7 @@ def generate_expanded_matrix_html(raw_news_payload, stock_section_html):
             <p style="margin:0; font-size:14px; line-height:1.6; color:#1e3a8a;">[INSERT 2-3 SENTENCE GLOBAL IMPACT SUMMARY OF THE BREAKING MOVES HERE IN ENGLISH]</p>
         </div>
 
-        <!-- INSERT STOCK COMPONENT EXACTLY HERE -->
-        {stock_section_html}
+        <!-- STOCK_SECTION_PLACEHOLDER -->
 
         <div style="background-color:#ffffff; border-radius:8px; border:1px solid #e2e8f0; padding:20px; margin-bottom:25px;">
             <div style="display:inline-block; background-color:#f0fdf4; color:#166534; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:10px; text-transform:uppercase;">📈 Stock Markets & Finance</div>
@@ -251,7 +288,7 @@ def generate_expanded_matrix_html(raw_news_payload, stock_section_html):
     </div>
 
     CRITICAL INSTRUCTIONS:
-    - Never break the shell layout template. Do NOT modify the stock table component inserted above.
+    - Retain the exact comment line <!-- STOCK_SECTION_PLACEHOLDER --> without removing or replacing it.
     - Substitute placeholders with actual curated news facts from the source feed.
     - Taiwan content sections must be in native Traditional Chinese (繁體中文). USA sections and the Overview must be in English.
     - Apply professional inline email CSS styling. Omit all ```html wrappers. Output only raw inner HTML.
@@ -262,7 +299,6 @@ def generate_expanded_matrix_html(raw_news_payload, stock_section_html):
     
     max_retries = 3
     delay = 5  
-    
     api_config = types.GenerateContentConfig(
         thinking_config=types.ThinkingConfig(thinking_budget=0)
     )
@@ -306,7 +342,7 @@ def main():
         print("❌ Configuration Missing.")
         return
 
-    print("📈 Fetching Taiwan stock price ranges, volumes, and institutional activity...")
+    print("📈 Fetching Taiwan stock price, changes, NTD volume, and institutional data...")
     stock_section_html = fetch_taiwan_stock_summary(TW_WATCHLIST)
 
     print("🛰️ Harvesting targeted news category arrays from past 24 hours...")
@@ -316,9 +352,16 @@ def main():
         master_feed += fetch_category_news(query_string) + "\n"
         
     print("🧠 Chief Editor Model: Extracting top stories and formatting matrix...")
-    report_html = generate_expanded_matrix_html(master_feed, stock_section_html)
+    report_html = generate_expanded_matrix_html(master_feed)
     
-    send_resend_email(report_html)
+    # Directly inject the exact python-generated stock table into the template
+    if "<!-- STOCK_SECTION_PLACEHOLDER -->" in report_html:
+        final_email_html = report_html.replace("<!-- STOCK_SECTION_PLACEHOLDER -->", stock_section_html)
+    else:
+        # Fallback in case LLM removed comment
+        final_email_html = report_html + stock_section_html
+
+    send_resend_email(final_email_html)
 
 if __name__ == "__main__":
     main()
