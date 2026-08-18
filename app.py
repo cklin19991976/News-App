@@ -158,18 +158,22 @@ def fetch_taiwan_stock_summary(watchlist):
     # 3B. TPEx OTC (上櫃 - e.g., 4772 台特化)
     for d in query_dates:
         try:
-            tpex_url = f"https://www.tpex.org.tw/web/stock/3insti/daily_trading/3itrade_hedge_result.php?l=zh-tw&t=D&d={d['tpex']}"
+            # 修正：daily_trade (單數) 加上 se=EW (所有證券) 及 &o=json
+            tpex_url = f"https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge_result.php?l=zh-tw&o=json&se=EW&t=D&d={d['tpex']}"
             tpex_resp = requests.get(tpex_url, headers=headers, timeout=10)
             if tpex_resp.status_code == 200:
                 json_data = tpex_resp.json()
-                if "aaData" in json_data and len(json_data["aaData"]) > 0:
-                    for row in json_data["aaData"]:
-                        code = row[0].strip()
+                rows = json_data.get("aaData", [])
+                if rows:
+                    for row in rows:
+                        code = str(row[0]).strip()
                         if code in watchlist:
-                            net_shares = int(row[14].replace(',', ''))
+                            # TPEx 陣列最後一欄 (row[-1] 或 row[23]) 為「三大法人買賣超股數合計」
+                            total_shares_str = str(row[-1]).replace(',', '').strip()
+                            net_shares = int(total_shares_str)
                             institutional_data[code] = f"{net_shares // 1000:+,} 張"
-                    break  # Successfully found latest published data
-        except Exception:
+                    break  # 成功取得最近一個已結算交易日的數據
+        except Exception as e:
             continue
 
     # 4. Construct HTML Component
