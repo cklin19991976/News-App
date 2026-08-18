@@ -85,7 +85,7 @@ def get_latest_settled_dates(lookback_days=5):
     return dates
 
 def fetch_taiwan_stock_summary(watchlist):
-    """Fetches real quotes and automatically falls back to latest settled institutional trading."""
+    """Fetches real quotes and parses both Foreign Investor (外資) and Total Institutional (三大法人) net trading."""
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
     # 1. Fetch Real-time / Daily Quotes from MIS API
@@ -134,7 +134,7 @@ def fetch_taiwan_stock_summary(watchlist):
     except Exception as e:
         print(f"⚠️ Error fetching TAIEX NTD turnover: {e}")
 
-    # 3. Fetch Institutional Trading with Multi-Day Fallback
+    # 3. Fetch Institutional Trading with Multi-Day Fallback (Foreign & Total)
     institutional_data = {}
     query_dates = get_latest_settled_dates()
 
@@ -149,16 +149,19 @@ def fetch_taiwan_stock_summary(watchlist):
                     for row in json_data["data"]:
                         code = row[0].strip()
                         if code in watchlist:
-                            net_shares = int(row[18].replace(',', ''))
-                            institutional_data[code] = f"{net_shares // 1000:+,} 張"
-                    break  # Successfully found latest published data
+                            foreign_shares = int(row[4].replace(',', ''))
+                            total_shares = int(row[18].replace(',', ''))
+                            institutional_data[code] = {
+                                "foreign": f"{foreign_shares // 1000:+,} 張",
+                                "total": f"{total_shares // 1000:+,} 張"
+                            }
+                    break
         except Exception:
             continue
 
     # 3B. TPEx OTC (上櫃 - e.g., 4772 台特化)
     for d in query_dates:
         try:
-            # 修正：daily_trade (單數) 加上 se=EW (所有證券) 及 &o=json
             tpex_url = f"https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge_result.php?l=zh-tw&o=json&se=EW&t=D&d={d['tpex']}"
             tpex_resp = requests.get(tpex_url, headers=headers, timeout=10)
             if tpex_resp.status_code == 200:
@@ -168,27 +171,34 @@ def fetch_taiwan_stock_summary(watchlist):
                     for row in rows:
                         code = str(row[0]).strip()
                         if code in watchlist:
-                            # TPEx 陣列最後一欄 (row[-1] 或 row[23]) 為「三大法人買賣超股數合計」
-                            total_shares_str = str(row[-1]).replace(',', '').strip()
-                            net_shares = int(total_shares_str)
-                            institutional_data[code] = f"{net_shares // 1000:+,} 張"
-                    break  # 成功取得最近一個已結算交易日的數據
-        except Exception as e:
+                            foreign_shares = int(str(row[7]).replace(',', '').strip())
+                            total_shares = int(str(row[-1]).replace(',', '').strip())
+                            institutional_data[code] = {
+                                "foreign": f"{foreign_shares // 1000:+,} 張",
+                                "total": f"{total_shares // 1000:+,} 張"
+                            }
+                    break
+        except Exception:
             continue
 
-    # 4. Construct HTML Component
+    # 4. Construct HTML Component with 外資 and 三大法人 columns
     table_rows = ""
     for code, meta in watchlist.items():
         name = meta["name"]
         q = quotes.get(code, {"close": "-", "diff_val": 0, "change": "-", "volume_lots": "-"})
-        
+        inst_entry = institutional_data.get(code, {"foreign": "-", "total": "-"})
+
         if code == "t00":
             volume_display = taiex_ntd_volume if taiex_ntd_volume else f"{q['volume_lots']} 張"
-            total_inst = "市場指數無個股法人"
+            foreign_inst = "-"
+            total_inst = "-"
+            foreign_color = "#64748b"
             inst_color = "#64748b"
         else:
             volume_display = f"{q['volume_lots']} 張"
-            total_inst = institutional_data.get(code, "無交易數據")
+            foreign_inst = inst_entry.get("foreign", "無數據")
+            total_inst = inst_entry.get("total", "無數據")
+            foreign_color = "#dc2626" if "+" in foreign_inst else "#16a34a" if "-" in foreign_inst else "#475569"
             inst_color = "#dc2626" if "+" in total_inst else "#16a34a" if "-" in total_inst else "#475569"
 
         diff_val = q.get("diff_val", 0)
@@ -200,13 +210,14 @@ def fetch_taiwan_stock_summary(watchlist):
             <td style="padding: 10px 6px; font-weight: bold; color: #0f172a;">{q['close']}</td>
             <td style="padding: 10px 6px; color: {change_color}; font-weight: 600;">{q['change']}</td>
             <td style="padding: 10px 6px; color: #334155;">{volume_display}</td>
+            <td style="padding: 10px 6px; color: {foreign_color}; font-weight: 600;">{foreign_inst}</td>
             <td style="padding: 10px 6px; color: {inst_color}; font-weight: 600;">{total_inst}</td>
         </tr>
         """
 
     return f"""
     <div style="background-color:#ffffff; border-radius:8px; border:1px solid #e2e8f0; padding:20px; margin-bottom:25px;">
-        <div style="display:inline-block; background-color:#fef3c7; color:#92400e; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:12px; text-transform:uppercase;">📊 Key Taiwan Equities Tracking (台股行情與三大法人)</div>
+        <div style="display:inline-block; background-color:#fef3c7; color:#92400e; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:12px; text-transform:uppercase;">📊 Key Taiwan Equities Tracking (台股行情與法人動向)</div>
         <table style="width:100%; border-collapse: collapse; margin-top:8px;">
             <thead>
                 <tr style="background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; font-size: 12px; color: #64748b;">
@@ -214,6 +225,7 @@ def fetch_taiwan_stock_summary(watchlist):
                     <th style="padding: 8px 6px;">收盤價</th>
                     <th style="padding: 8px 6px;">漲跌幅</th>
                     <th style="padding: 8px 6px;">成交金額 / 成交量</th>
+                    <th style="padding: 8px 6px;">外資買賣超</th>
                     <th style="padding: 8px 6px;">三大法人買賣超</th>
                 </tr>
             </thead>
@@ -221,7 +233,7 @@ def fetch_taiwan_stock_summary(watchlist):
                 {table_rows}
             </tbody>
         </table>
-        <p style="font-size: 11px; color: #94a3b8; margin: 8px 0 0 0; text-align: right;">* 買賣超單位：張 (+買超 / -賣超)。若盤中查詢將自動顯示前一已結算交易日之法人籌碼。數據來源：TWSE / TPEx</p>
+        <p style="font-size: 11px; color: #94a3b8; margin: 8px 0 0 0; text-align: right;">* 買賣超單位：張 (+買超 / -賣超)。大盤成交量為總成交金額。數據來源：TWSE / TPEx</p>
     </div>
     """
 
