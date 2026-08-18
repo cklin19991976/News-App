@@ -13,6 +13,16 @@ RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL", "your_account@gmail.com")
 
 resend.api_key = os.environ.get("RESEND_API_KEY", "YOUR_RESEND_API_KEY")
 
+# Target assets for Week & Month KD analysis
+KD_WATCHLIST = {
+    "SPY": {"name": "S&P 500 ETF (SPY)", "ticker": "SPY"},
+    "QQQ": {"name": "Nasdaq 100 ETF (QQQ)", "ticker": "QQQ"},
+    "t00": {"name": "加權指數 (TAIEX)", "ticker": "^TWII"},
+    "0050": {"name": "元大台灣50 (0050)", "ticker": "0050.TW"},
+    "2330": {"name": "台積電 (TSMC)", "ticker": "2330.TW"},
+}
+
+# Taiwan stock watchlist for Quotes, Flow & MAs
 TW_WATCHLIST = {
     "t00": {"name": "加權指數", "market": "tse", "yf_ticker": "^TWII"},
     "2330": {"name": "台積電", "market": "tse", "yf_ticker": "2330.TW"},
@@ -81,6 +91,111 @@ def get_latest_settled_dates(lookback_days=5):
             "tpex": f"{dt.year - 1911}/{dt.strftime('%m/%d')}"
         })
     return dates
+
+def calculate_kd(highs, lows, closes, period=9):
+    """Computes classic KD (9, 3, 3) stochastic indicators."""
+    if len(closes) < period:
+        return None, None
+    
+    k = 50.0
+    d = 50.0
+    
+    for i in range(period - 1, len(closes)):
+        window_highs = highs[i - period + 1 : i + 1]
+        window_lows = lows[i - period + 1 : i + 1]
+        
+        hn = max(window_highs)
+        ln = min(window_lows)
+        cn = closes[i]
+        
+        rsv = ((cn - ln) / (hn - ln) * 100.0) if hn != ln else 50.0
+        k = (2.0 / 3.0) * k + (1.0 / 3.0) * rsv
+        d = (2.0 / 3.0) * d + (1.0 / 3.0) * k
+        
+    return round(k, 2), round(d, 2)
+
+def fetch_kd_values(ticker, interval, range_str):
+    """Fetches high, low, close data and calculates latest K and D values."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range={range_str}&interval={interval}"
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return None, None
+        
+        data = resp.json()
+        chart_result = data.get("chart", {}).get("result")
+        if not chart_result:
+            return None, None
+        
+        quotes = chart_result[0].get("indicators", {}).get("quote", [])[0]
+        highs = quotes.get("high", [])
+        lows = quotes.get("low", [])
+        closes = quotes.get("close", [])
+        
+        clean_highs, clean_lows, clean_closes = [], [], []
+        for h, l, c in zip(highs, lows, closes):
+            if h is not None and l is not None and c is not None:
+                clean_highs.append(float(h))
+                clean_lows.append(float(l))
+                clean_closes.append(float(c))
+                
+        return calculate_kd(clean_highs, clean_lows, clean_closes, period=9)
+    except Exception as e:
+        print(f"⚠️ Warning: KD calculation error for {ticker} ({interval}): {e}")
+        return None, None
+
+def fetch_kd_section_html(watchlist):
+    """Generates the Week KD & Month KD table with Overbought (>80) & Oversold (<20) alerts."""
+    rows = ""
+    for code, meta in watchlist.items():
+        name = meta["name"]
+        ticker = meta["ticker"]
+        
+        w_k, w_d = fetch_kd_values(ticker, "1wk", "2y")
+        m_k, m_d = fetch_kd_values(ticker, "1mo", "5y")
+        
+        def render_kd_badge(k_val, d_val):
+            if k_val is None or d_val is None:
+                return "<span style='color:#94a3b8;'>-</span>"
+            
+            kd_str = f"K: {k_val:.1f} / D: {d_val:.1f}"
+            # Overbought (> 80)
+            if k_val >= 80 or d_val >= 80:
+                return f"""<span style="background-color:#fee2e2; color:#991b1b; padding:3px 6px; border-radius:4px; font-weight:700;">{kd_str} (超買)</span>"""
+            # Oversold (< 20)
+            elif k_val <= 20 or d_val <= 20:
+                return f"""<span style="background-color:#dcfce7; color:#166534; padding:3px 6px; border-radius:4px; font-weight:700;">{kd_str} (超賣)</span>"""
+            return f"""<span style="color:#334155; font-weight:500;">{kd_str}</span>"""
+
+        rows += f"""
+        <tr style="border-bottom: 1px solid #f1f5f9; text-align: center; font-size: 13px;">
+            <td style="padding: 10px 8px; text-align: left; font-weight: 600;">{name}</td>
+            <td style="padding: 10px 8px;">{render_kd_badge(w_k, w_d)}</td>
+            <td style="padding: 10px 8px;">{render_kd_badge(m_k, m_d)}</td>
+        </tr>
+        """
+
+    return f"""
+    <div style="background-color:#ffffff; border-radius:8px; border:1px solid #e2e8f0; padding:20px; margin-bottom:20px;">
+        <div style="display:inline-block; background-color:#fae8ff; color:#86198f; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:12px; text-transform:uppercase;">⚡ Key Benchmark Momentum (周 KD / 月 KD 週期動量指標)</div>
+        <table style="width:100%; border-collapse: collapse; margin-top:6px;">
+            <thead>
+                <tr style="background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; font-size: 12px; color: #64748b;">
+                    <th style="padding: 8px 8px; text-align: left;">追蹤標的</th>
+                    <th style="padding: 8px 8px;">周 KD (9, 3, 3)</th>
+                    <th style="padding: 8px 8px;">月 KD (9, 3, 3)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows}
+            </tbody>
+        </table>
+        <p style="font-size: 11px; color: #94a3b8; margin: 8px 0 0 0; text-align: right;">* 標示說明：<span style="color:#991b1b; font-weight:bold;">KD &gt; 80</span> 為超買過熱區；<span style="color:#166534; font-weight:bold;">KD &lt; 20</span> 為超賣低檔區。</p>
+    </div>
+    """
 
 def fetch_stock_moving_averages(ticker):
     """Defensively fetches historical closing data and computes moving averages."""
@@ -210,7 +325,7 @@ def fetch_taiwan_stock_summary(watchlist):
         except Exception:
             continue
 
-    # 3B. TPEx OTC (e.g. 4772)
+    # 3B. TPEx OTC (e.g., 4772)
     for d in query_dates:
         try:
             tpex_url = f"https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge_result.php?l=zh-tw&o=json&se=EW&t=D&d={d['tpex']}"
@@ -237,7 +352,7 @@ def fetch_taiwan_stock_summary(watchlist):
     for code, meta in watchlist.items():
         ma_results[code] = fetch_stock_moving_averages(meta["yf_ticker"])
 
-    # 5. Build HTML Table 1
+    # 5. Build HTML Table 1: Equities & Institutional Flows
     table_rows = ""
     for code, meta in watchlist.items():
         name = meta["name"]
@@ -271,7 +386,7 @@ def fetch_taiwan_stock_summary(watchlist):
         </tr>
         """
 
-    # 6. Build HTML Table 2 (MA)
+    # 6. Build HTML Table 2: MA Matrix & Alerts
     ma_table_rows = ""
     for code, meta in watchlist.items():
         name = meta["name"]
@@ -342,7 +457,7 @@ def fetch_taiwan_stock_summary(watchlist):
     """
 
 def generate_expanded_matrix_html(raw_news_payload):
-    """Uses Gemini to generate the curated news matrix, strictly preserving the stock placeholder."""
+    """Uses Gemini to generate the curated news matrix and Executive Summary."""
     client = genai.Client(api_key=GEMINI_API_KEY)
     
     prompt = f"""
@@ -362,12 +477,14 @@ def generate_expanded_matrix_html(raw_news_payload):
             <p style="margin:5px 0 0 0; font-size:14px; color:#64748b;">Curated top strategic events and developments from the last 24 hours.</p>
         </div>
 
-        <div style="background-color:#eff6ff; border-left:4px solid #3b82f6; padding:15px; border-radius:0 8px 8px 0; margin-bottom:30px;">
+        <!-- TOP_KD_PLACEHOLDER -->
+        <!-- STOCK_SECTION_PLACEHOLDER -->
+
+        <!-- EXECUTIVE SUMMARY (POSITIONED AFTER MA SECTION) -->
+        <div style="background-color:#eff6ff; border-left:4px solid #3b82f6; padding:15px; border-radius:0 8px 8px 0; margin-bottom:25px;">
             <h3 style="margin:0 0 8px 0; font-size:14px; text-transform:uppercase; letter-spacing:0.05em; color:#1d4ed8; font-weight:700;">Executive Summary</h3>
             <p style="margin:0; font-size:14px; line-height:1.6; color:#1e3a8a;">[INSERT 2-3 SENTENCE GLOBAL IMPACT SUMMARY OF THE BREAKING MOVES HERE IN ENGLISH]</p>
         </div>
-
-        <!-- STOCK_SECTION_PLACEHOLDER -->
 
         <div style="background-color:#ffffff; border-radius:8px; border:1px solid #e2e8f0; padding:20px; margin-bottom:25px;">
             <div style="display:inline-block; background-color:#f0fdf4; color:#166534; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:10px; text-transform:uppercase;">📈 Stock Markets & Finance</div>
@@ -417,7 +534,7 @@ def generate_expanded_matrix_html(raw_news_payload):
     </div>
 
     CRITICAL INSTRUCTIONS:
-    - Retain the exact comment line <!-- STOCK_SECTION_PLACEHOLDER --> without removing or replacing it.
+    - Retain the exact comment lines <!-- TOP_KD_PLACEHOLDER --> and <!-- STOCK_SECTION_PLACEHOLDER --> without removing or replacing them.
     - Every selected story item MUST have a valid source link tag matching the URL provided in the raw data pool.
     - Taiwan content sections must be in native Traditional Chinese (繁體中文). USA sections and the Overview must be in English.
     - Apply professional inline email CSS styling. Omit all ```html wrappers. Output only raw inner HTML.
@@ -471,6 +588,9 @@ def main():
         print("❌ Configuration Missing.")
         return
 
+    print("⚡ Computing Week KD & Month KD for benchmark assets (SPY, QQQ, TAIEX, 0050, TSMC)...")
+    top_kd_html = fetch_kd_section_html(KD_WATCHLIST)
+
     print("📈 Fetching Taiwan stock quotes, institutional data, and moving average crossovers...")
     stock_section_html = fetch_taiwan_stock_summary(TW_WATCHLIST)
 
@@ -483,10 +603,17 @@ def main():
     print("🧠 Chief Editor Model: Extracting top stories and formatting matrix...")
     report_html = generate_expanded_matrix_html(master_feed)
     
-    if "<!-- STOCK_SECTION_PLACEHOLDER -->" in report_html:
-        final_email_html = report_html.replace("<!-- STOCK_SECTION_PLACEHOLDER -->", stock_section_html)
+    # Inject components into their respective positions
+    final_email_html = report_html
+    if "<!-- TOP_KD_PLACEHOLDER -->" in final_email_html:
+        final_email_html = final_email_html.replace("<!-- TOP_KD_PLACEHOLDER -->", top_kd_html)
     else:
-        final_email_html = report_html + stock_section_html
+        final_email_html = top_kd_html + final_email_html
+
+    if "<!-- STOCK_SECTION_PLACEHOLDER -->" in final_email_html:
+        final_email_html = final_email_html.replace("<!-- STOCK_SECTION_PLACEHOLDER -->", stock_section_html)
+    else:
+        final_email_html += stock_section_html
 
     send_resend_email(final_email_html)
 
