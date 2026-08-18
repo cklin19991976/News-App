@@ -238,11 +238,16 @@ def fetch_taiwan_stock_summary(watchlist):
     """
 
 def generate_expanded_matrix_html(raw_news_payload):
-    """Uses Gemini to generate the curated news matrix, preserving the stock placeholder."""
+    """Uses Gemini to generate the curated news matrix with clickable source links, preserving the stock placeholder."""
     client = genai.Client(api_key=GEMINI_API_KEY)
     
     prompt = f"""
     You are an elite corporate intelligence compiler. Analyze the raw recent data feed provided below. Your primary task is to critically evaluate these fresh entries and CHOOSE ONLY the absolute top 3 most important, breaking, high-impact news stories of the last 24 hours for each subject matrix.
+
+    CRITICAL LINKING RULE:
+    Every bullet point MUST include an active clickable hyperlink pointing to the article's actual source URL found in the raw data pool (`Link: ...`).
+    - Traditional Chinese format: <li style="margin-bottom:8px;"><strong>Headline Title</strong> — Description summary sentence. <a href="ACTUAL_URL" target="_blank" style="color:#2563eb; text-decoration:none; font-size:12px; font-weight:600;">[來源連結]</a></li>
+    - English format: <li style="margin-bottom:8px;"><strong>Headline Title</strong> — Description summary sentence. <a href="ACTUAL_URL" target="_blank" style="color:#2563eb; text-decoration:none; font-size:12px; font-weight:600;">[Source Link]</a></li>
 
     Follow this HTML layout structure precisely, using modern inline CSS:
 
@@ -266,12 +271,12 @@ def generate_expanded_matrix_html(raw_news_payload):
             
             <h4 style="margin:10px 0 10px 0; font-size:15px; color:#334155; border-bottom:1px solid #f1f5f9; padding-bottom:4px;">🇹🇼 Taiwan Market (繁體中文)</h4>
             <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
-                [INSERT EXACTLY 3 CHOSEN TOP STORIES FROM PAST 24H IN TRADITIONAL CHINESE]
+                [INSERT EXACTLY 3 CHOSEN TOP STORIES IN TRADITIONAL CHINESE WITH [來源連結]]
             </ul>
             
             <h4 style="margin:20px 0 10px 0; font-size:15px; color:#334155; border-bottom:1px solid #f1f5f9; padding-bottom:4px;">🇺🇸 United States Market (English)</h4>
             <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
-                [INSERT EXACTLY 3 CHOSEN TOP STORIES FROM PAST 24H IN ENGLISH]
+                [INSERT EXACTLY 3 CHOSEN TOP STORIES IN ENGLISH WITH [Source Link]]
             </ul>
         </div>
 
@@ -281,12 +286,12 @@ def generate_expanded_matrix_html(raw_news_payload):
             
             <h4 style="margin:10px 0 10px 0; font-size:15px; color:#334155; border-bottom:1px solid #f1f5f9; padding-bottom:4px;">🇹🇼 Taiwan Tech Ecosystem (繁體中文)</h4>
             <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
-                [INSERT EXACTLY 3 CHOSEN TOP STORIES FROM PAST 24H IN TRADITIONAL CHINESE]
+                [INSERT EXACTLY 3 CHOSEN TOP STORIES IN TRADITIONAL CHINESE WITH [來源連結]]
             </ul>
             
             <h4 style="margin:20px 0 10px 0; font-size:15px; color:#334155; border-bottom:1px solid #f1f5f9; padding-bottom:4px;">🇺🇸 United States Innovation (English)</h4>
             <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
-                [INSERT EXACTLY 3 CHOSEN ENGLISH BULLETS]
+                [INSERT EXACTLY 3 CHOSEN TOP STORIES IN ENGLISH WITH [Source Link]]
             </ul>
         </div>
 
@@ -296,12 +301,12 @@ def generate_expanded_matrix_html(raw_news_payload):
             
             <h4 style="margin:10px 0 10px 0; font-size:15px; color:#334155; border-bottom:1px solid #f1f5f9; padding-bottom:4px;">🇹🇼 Taiwan Telco Networks (繁體中文)</h4>
             <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
-                [INSERT EXACTLY 3 CHOSEN TRADITIONAL CHINESE BULLETS]
+                [INSERT EXACTLY 3 CHOSEN TOP STORIES IN TRADITIONAL CHINESE WITH [來源連結]]
             </ul>
             
             <h4 style="margin:20px 0 10px 0; font-size:15px; color:#334155; border-bottom:1px solid #f1f5f9; padding-bottom:4px;">🇺🇸 United States Infrastructure (English)</h4>
             <ul style="margin:0; padding-left:20px; font-size:14px; line-height:1.6; color:#334155;">
-                [INSERT EXACTLY 3 CHOSEN ENGLISH BULLETS]
+                [INSERT EXACTLY 3 CHOSEN TOP STORIES IN ENGLISH WITH [Source Link]]
             </ul>
         </div>
 
@@ -309,7 +314,7 @@ def generate_expanded_matrix_html(raw_news_payload):
 
     CRITICAL INSTRUCTIONS:
     - Retain the exact comment line <!-- STOCK_SECTION_PLACEHOLDER --> without removing or replacing it.
-    - Substitute placeholders with actual curated news facts from the source feed.
+    - Every selected story item MUST have a valid source link tag matching the URL provided in the raw data pool.
     - Taiwan content sections must be in native Traditional Chinese (繁體中文). USA sections and the Overview must be in English.
     - Apply professional inline email CSS styling. Omit all ```html wrappers. Output only raw inner HTML.
 
