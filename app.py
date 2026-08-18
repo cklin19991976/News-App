@@ -1,6 +1,6 @@
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import requests
 import resend
 from google import genai
@@ -13,19 +13,13 @@ RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL", "your_account@gmail.com")
 
 resend.api_key = os.environ.get("RESEND_API_KEY", "YOUR_RESEND_API_KEY")
 
-# Taiwan stock watchlist (market: 'tse' for TWSE, 'otc' for TPEx, yf_ticker for historical MA calculation)
 TW_WATCHLIST = {
-    "t00": {"name": "加權指數", "market": "tse"},
-    "2330": {"name": "台積電", "market": "tse"},
-    "0050": {"name": "台灣50", "market": "tse"},
-    "00675L": {"name": "富邦正2", "market": "tse"},
-    "00631L": {"name": "元大正2", "market": "tse"},
-    "00662": {"name": "富邦QQQ", "market": "tse"},
-    "1215": {"name": "卜蜂", "market": "tse"},
-    "2912": {"name": "統一超", "market": "tse"},
-    "1232": {"name": "大統益", "market": "tse"},
-    "4772": {"name": "台特化", "market": "otc"},
-    }
+    "t00": {"name": "加權指數 (TAIEX)", "market": "tse", "yf_ticker": "^TWII"},
+    "2330": {"name": "台積電 (TSMC)", "market": "tse", "yf_ticker": "2330.TW"},
+    "2317": {"name": "鴻海 (Foxconn)", "market": "tse", "yf_ticker": "2317.TW"},
+    "2454": {"name": "聯發科 (MediaTek)", "market": "tse", "yf_ticker": "2454.TW"},
+    "4772": {"name": "台特化 (TSCS)", "market": "otc", "yf_ticker": "4772.TWO"},
+}
 
 CATEGORIES = {
     "Taiwan_Finance": "taiwan AND (market OR finance OR stock)",
@@ -39,7 +33,7 @@ CATEGORIES = {
 def fetch_category_news(query_string):
     """Fetches real articles using clean YYYY-MM-DD parameters for free tier stability."""
     url = "https://newsapi.org/v2/everything"
-    date_yesterday = (datetime.utcnow() - timedelta(days=1)).strftime('%Y-%m-%d')
+    date_yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime('%Y-%m-%d')
     
     params = {
         "q": query_string,
@@ -72,8 +66,8 @@ def fetch_category_news(query_string):
         return f"Error gathering data: {e}"
 
 def get_latest_settled_dates(lookback_days=5):
-    """Generates a list of recent date strings (YYYYMMDD and YYYY/MM/DD) to query backwards."""
-    tw_now = datetime.utcnow() + timedelta(hours=8)
+    """Generates a list of recent date strings without using deprecated utcnow."""
+    tw_now = datetime.now(timezone.utc) + timedelta(hours=8)
     dates = []
     for i in range(lookback_days):
         dt = tw_now - timedelta(days=i)
@@ -84,9 +78,10 @@ def get_latest_settled_dates(lookback_days=5):
     return dates
 
 def fetch_stock_moving_averages(ticker):
-    """Fetches historical closing data and computes 5, 10, 20, 60, 120, and 240 MA with crossover detection."""
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    # Pull 2 years of daily data from Yahoo Finance API endpoint
+    """Defensively fetches historical closing data and computes moving averages."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=2y&interval=1d"
     
     ma_windows = [5, 10, 20, 60, 120, 240]
@@ -98,8 +93,16 @@ def fetch_stock_moving_averages(ticker):
             return result
         
         data = resp.json()
-        closes = data["chart"]["result"][0]["indicators"]["quote"][0]["close"]
-        clean_closes = [c for c in closes if c is not None]
+        chart_result = data.get("chart", {}).get("result")
+        if not chart_result or len(chart_result) == 0:
+            return result
+        
+        indicators = chart_result[0].get("indicators", {}).get("quote", [])
+        if not indicators or "close" not in indicators[0]:
+            return result
+
+        closes = indicators[0].get("close", [])
+        clean_closes = [float(c) for c in closes if c is not None]
         
         if len(clean_closes) < 2:
             return result
@@ -113,10 +116,8 @@ def fetch_stock_moving_averages(ticker):
                 prev_ma = sum(clean_closes[-(w + 1):-1]) / w
                 
                 cross = None
-                # Bullish Breakout (Golden Cross over MA)
                 if prev_price <= prev_ma and curr_price > curr_ma:
                     cross = "UP"
-                # Bearish Breakdown (Death Cross below MA)
                 elif prev_price >= prev_ma and curr_price < curr_ma:
                     cross = "DOWN"
                     
@@ -125,15 +126,15 @@ def fetch_stock_moving_averages(ticker):
                     "cross": cross
                 }
     except Exception as e:
-        print(f"⚠️ Error computing MA for {ticker}: {e}")
+        print(f"⚠️ Warning: MA calculation skipped for {ticker} ({e})")
         
     return result
 
 def fetch_taiwan_stock_summary(watchlist):
-    """Fetches real quotes, institutional flows, and moving average matrix."""
+    """Fetches real quotes, institutional flows, and moving average matrix safely."""
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
-    # 1. Fetch Real-time / Daily Quotes from MIS API
+    # 1. Fetch Real-time Quotes
     symbols_query = "|".join([f"{meta['market']}_{code}.tw" for code, meta in watchlist.items()])
     quote_url = f"https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch={symbols_query}&json=1&delay=0"
     
@@ -146,7 +147,7 @@ def fetch_taiwan_stock_summary(watchlist):
                 code = item.get("c")
                 prev_close = float(item.get("y", 0)) if item.get("y") and item.get("y") != "-" else None
                 close_raw = item.get("z", "-")
-                close_val = prev_close if (close_raw == "-" or not close_raw) else float(close_raw) if close_raw.replace('.', '', 1).isdigit() else None
+                close_val = prev_close if (close_raw == "-" or not close_raw) else float(close_raw) if str(close_raw).replace('.', '', 1).isdigit() else None
 
                 change_str = "-"
                 change_pct_str = ""
@@ -164,9 +165,9 @@ def fetch_taiwan_stock_summary(watchlist):
                     "volume_lots": f"{int(item.get('v', 0)):,}" if str(item.get('v', '')).isdigit() else "-"
                 }
     except Exception as e:
-        print(f"⚠️ Error fetching MIS quotes: {e}")
+        print(f"⚠️ Warning: Error fetching MIS quotes: {e}")
 
-    # 2. Fetch TAIEX Total Daily Turnover in NTD
+    # 2. Fetch TAIEX Turnover in NTD
     taiex_ntd_volume = None
     try:
         fmtqik_url = "https://www.twse.com.tw/rwd/zh/afterTrading/FMTQIK?response=json"
@@ -177,13 +178,13 @@ def fetch_taiwan_stock_summary(watchlist):
                 turnover_ntd = int(fmt_data[-1][2].replace(',', ''))
                 taiex_ntd_volume = f"NT$ {turnover_ntd / 1e8:,.2f} 億"
     except Exception as e:
-        print(f"⚠️ Error fetching TAIEX NTD turnover: {e}")
+        print(f"⚠️ Warning: Error fetching TAIEX NTD turnover: {e}")
 
-    # 3. Fetch Institutional Trading with Multi-Day Fallback (Foreign & Total)
+    # 3. Fetch Institutional Data
     institutional_data = {}
     query_dates = get_latest_settled_dates()
 
-    # 3A. TWSE Listed (上市)
+    # 3A. TWSE Listed
     for d in query_dates:
         try:
             twse_url = f"https://www.twse.com.tw/rwd/zh/fund/T86?date={d['twse']}&selectType=ALL&response=json"
@@ -204,7 +205,7 @@ def fetch_taiwan_stock_summary(watchlist):
         except Exception:
             continue
 
-    # 3B. TPEx OTC (上櫃 - e.g., 4772 台特化)
+    # 3B. TPEx OTC (e.g. 4772)
     for d in query_dates:
         try:
             tpex_url = f"https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge_result.php?l=zh-tw&o=json&se=EW&t=D&d={d['tpex']}"
@@ -226,12 +227,12 @@ def fetch_taiwan_stock_summary(watchlist):
         except Exception:
             continue
 
-    # 4. Fetch and compute Moving Averages for all targets
+    # 4. Fetch Moving Averages
     ma_results = {}
     for code, meta in watchlist.items():
         ma_results[code] = fetch_stock_moving_averages(meta["yf_ticker"])
 
-    # 5. Build Stock Main Summary Table
+    # 5. Build HTML Table 1
     table_rows = ""
     for code, meta in watchlist.items():
         name = meta["name"]
@@ -265,7 +266,7 @@ def fetch_taiwan_stock_summary(watchlist):
         </tr>
         """
 
-    # 6. Build Moving Average & Cross-Alert Table
+    # 6. Build HTML Table 2 (MA)
     ma_table_rows = ""
     for code, meta in watchlist.items():
         name = meta["name"]
@@ -292,8 +293,7 @@ def fetch_taiwan_stock_summary(watchlist):
         </tr>
         """
 
-    combined_stock_html = f"""
-    <!-- Table 1: Equities & Institutional Flows -->
+    return f"""
     <div style="background-color:#ffffff; border-radius:8px; border:1px solid #e2e8f0; padding:20px; margin-bottom:20px;">
         <div style="display:inline-block; background-color:#fef3c7; color:#92400e; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:12px; text-transform:uppercase;">📊 Key Taiwan Equities (台股行情與法人動向)</div>
         <table style="width:100%; border-collapse: collapse; margin-top:8px;">
@@ -314,7 +314,6 @@ def fetch_taiwan_stock_summary(watchlist):
         <p style="font-size: 11px; color: #94a3b8; margin: 8px 0 0 0; text-align: right;">* 買賣超單位：張 (+買超 / -賣超)。大盤成交量為總成交金額。</p>
     </div>
 
-    <!-- Table 2: Moving Average Matrix & Crossover Monitor -->
     <div style="background-color:#ffffff; border-radius:8px; border:1px solid #e2e8f0; padding:20px; margin-bottom:25px;">
         <div style="display:inline-block; background-color:#e0e7ff; color:#3730a3; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:12px; text-transform:uppercase;">📈 Technical Moving Averages & Cross Alerts (均線穿越指標)</div>
         <table style="width:100%; border-collapse: collapse; margin-top:8px;">
@@ -336,8 +335,6 @@ def fetch_taiwan_stock_summary(watchlist):
         <p style="font-size: 11px; color: #94a3b8; margin: 8px 0 0 0; text-align: right;">* 標示說明：<span style="color:#b91c1c; font-weight:bold;">↑突破</span>（收盤價向上突破該均線）；<span style="color:#15803d; font-weight:bold;">↓跌破</span>（收盤價向下跌破該均線）。</p>
     </div>
     """
-    
-    return combined_stock_html
 
 def generate_expanded_matrix_html(raw_news_payload):
     """Uses Gemini to generate the curated news matrix, strictly preserving the stock placeholder."""
@@ -455,7 +452,7 @@ def send_resend_email(html_content):
         params = {
             "from": "NewsEngine <onboarding@resend.dev>",
             "to": [RECIPIENT_EMAIL],
-            "subject": "🌟 24-Hour Finance News & Market Tracker",
+            "subject": "🌟 24-Hour Executive Strategic Curation Digest & Technical Market Tracker",
             "html": html_content,
         }
         
