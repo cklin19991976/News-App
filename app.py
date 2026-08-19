@@ -178,7 +178,7 @@ def analyze_multi_kd_strategy(day_kd, week_kd, month_kd):
     Evaluates Multi-Timeframe KD Strategy with strict K <= 20 Low-level Golden Cross alerts:
     - 月 KD 低檔金叉 (K <= 20): 長期大牛市或歷史性大多頭轉折點。
     - 周 KD 低檔金叉 (K <= 20): 中波段起漲訊號 (主升段起點)。
-    - 最佳買點 (長多短回) & 避免陷阱 (逆勢摸底).
+    - 長线多頭时買點 (長多短回) & 小心陷阱 (逆勢摸底).
     """
     if not month_kd or not week_kd or not day_kd:
         return "<span style='color:#64748b;'>資料不足</span>"
@@ -199,13 +199,13 @@ def analyze_multi_kd_strategy(day_kd, week_kd, month_kd):
     if week_low_gold:
         return """<span style="background-color:#fee2e2; color:#991b1b; padding:3px 6px; border-radius:4px; font-weight:800; border:1px solid #f87171;">🚀 周KD低檔金叉 (中波段起漲/主升點)</span>"""
 
-    # 4. Multi-Cycle Best Buy Point (最佳買點: 長多短回)
+    # 4. Multi-Cycle Best Buy Point (長线多頭时買點: 長多短回)
     month_bullish = month_kd["is_bullish"] or (month_kd["k"] > month_kd["prev_k"])
     week_low_support = (week_kd["is_golden_cross"] and week_kd["k"] <= 50) or (week_kd["is_bullish"] and week_kd["k"] < 50)
     day_rebound = day_kd["is_reversing_up"] or day_kd["is_golden_cross"] or (day_kd["k"] > day_kd["prev_k"] and day_kd["k"] <= 30)
 
     if month_bullish and week_low_support and day_rebound:
-        return """<span style="background-color:#fee2e2; color:#b91c1c; padding:3px 6px; border-radius:4px; font-weight:800; border:1px solid #f87171;">🎯 最佳買點 (長多短回)</span>"""
+        return """<span style="background-color:#fee2e2; color:#b91c1c; padding:3px 6px; border-radius:4px; font-weight:800; border:1px solid #f87171;">🎯 長线多頭时買點 (長多短回)</span>"""
 
     # 5. Trap Avoidance (避免陷阱: 逆勢摸底)
     month_bearish = not month_kd["is_bullish"]
@@ -213,7 +213,7 @@ def analyze_multi_kd_strategy(day_kd, week_kd, month_kd):
     day_oversold_bounce = day_kd["k"] <= 20 or (day_kd["is_golden_cross"] and day_kd["k"] <= 20)
 
     if month_bearish and week_bearish and day_oversold_bounce:
-        return """<span style="background-color:#fef2f2; color:#991b1b; padding:3px 6px; border-radius:4px; font-weight:800; border:1px solid #fca5a5;">⚠️ 避免陷阱 (逆勢摸底)</span>"""
+        return """<span style="background-color:#fef2f2; color:#991b1b; padding:3px 6px; border-radius:4px; font-weight:800; border:1px solid #fca5a5;">⚠️ 陷阱小心 (逆勢摸底)</span>"""
 
     # 6. Trend continuations
     if month_bullish and week_kd["is_bullish"] and week_kd["k"] >= 80:
@@ -295,8 +295,8 @@ def fetch_kd_section_html(watchlist):
             💡 <strong>低檔黃金交叉 (K &le; 20 向上突破 D) 關鍵指引：</strong><br/>
             • <span style="color:#9d174d; font-weight:bold;">💎 月 KD 低檔金叉</span>：代表<strong>長期大牛市或歷史性大多頭轉折點</strong>（K &le; 20 起漲）。<br/>
             • <span style="color:#991b1b; font-weight:bold;">🚀 周 KD 低檔金叉</span>：代表<strong>中波段起漲訊號</strong>，常見於主升段或強勁反彈的起點。<br/>
-            • <span style="color:#b91c1c; font-weight:bold;">🎯 最佳買點（長多短回）</span>：月 KD 維持多頭 + 周 KD 低檔金叉 + 日 KD 低點反轉。<br/>
-            • <span style="color:#991b1b; font-weight:bold;">⚠️ 避免陷阱（逆勢摸底）</span>：月/周 KD 仍在持續死叉向下時，日 KD 超賣金叉僅為短線弱勢反彈，極易破底。
+            • <span style="color:#b91c1c; font-weight:bold;">🎯 長线多頭时買點（長多短回）</span>：月 KD 維持多頭 + 周 KD 低檔金叉 + 日 KD 低點反轉。<br/>
+            • <span style="color:#991b1b; font-weight:bold;">⚠️ 陷阱小心（逆勢摸底）</span>：月/周 KD 仍在持續死叉向下時，日 KD 超賣金叉僅為短線弱勢反彈，極易破底。
         </div>
     </div>
     """
