@@ -15,11 +15,15 @@ resend.api_key = os.environ.get("RESEND_API_KEY", "YOUR_RESEND_API_KEY")
 
 # Target assets for Week & Month KD analysis
 KD_WATCHLIST = {
-    "SPY": {"name": "S&P 500 ETF (SPY)", "ticker": "SPY"},
-    "QQQ": {"name": "Nasdaq 100 ETF (QQQ)", "ticker": "QQQ"},
-    "t00": {"name": "加權指數 (TAIEX)", "ticker": "^TWII"},
-    "0050": {"name": "元大台灣50 (0050)", "ticker": "0050.TW"},
-    "2330": {"name": "台積電 (TSMC)", "ticker": "2330.TW"},
+    "SPY": {"name": "S&P500 SPY", "ticker": "SPY"},
+    "QQQ": {"name": "Nasdaq100 QQQ", "ticker": "QQQ"},
+    "SOX": {"name": "費城半導體 SOX", "ticker": "^SOX"},
+    "t00": {"name": "台灣加權指數", "ticker": "^TWII"},
+    "0050": {"name": "元大台灣50", "ticker": "0050.TW"},
+    "2330": {"name": "台積電", "ticker": "2330.TW"},
+    "1215": {"name": "卜蜂", "ticker": "1215.TW"},
+    "4772": {"name": "台特化", "ticker": "4772.TWO"},
+    "1232": {"name": "大統益", "ticker": "1232.TW"},
 }
 
 # Taiwan stock watchlist for Quotes, Flow & MAs
