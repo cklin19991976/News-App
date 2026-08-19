@@ -175,30 +175,47 @@ def fetch_kd_info(ticker, interval, range_str):
 
 def analyze_multi_kd_strategy(day_kd, week_kd, month_kd):
     """
-    Evaluates '長看趨勢、短找買點' (Long trend, short trigger) Multi-Timeframe KD Strategy:
-    1. 最佳買點（長多短回）：月 KD 維持向上 + 周 KD 低檔金叉 + 日 KD 由低點反轉。
-    2. 避免陷阱（逆勢摸底）：月 KD、周 KD 持續向下/死叉，日 KD 低檔金叉/超賣 (反彈容易破底)。
+    Evaluates Multi-Timeframe KD Strategy with strict K <= 20 Low-level Golden Cross alerts:
+    - 月 KD 低檔金叉 (K <= 20): 長期大牛市或歷史性大多頭轉折點。
+    - 周 KD 低檔金叉 (K <= 20): 中波段起漲訊號 (主升段起點)。
+    - 最佳買點 (長多短回) & 避免陷阱 (逆勢摸底).
     """
     if not month_kd or not week_kd or not day_kd:
         return "<span style='color:#64748b;'>資料不足</span>"
 
-    month_bullish = month_kd["is_bullish"] or (month_kd["k"] > month_kd["prev_k"])
-    week_low_golden = (week_kd["is_golden_cross"] and week_kd["k"] <= 55) or (week_kd["is_bullish"] and week_kd["k"] < 50)
-    day_rebound = day_kd["is_reversing_up"] or day_kd["is_golden_cross"] or (day_kd["k"] > day_kd["prev_k"] and day_kd["k"] <= 40)
+    # Strict K <= 20 threshold for Low-level Golden Cross
+    month_low_gold = month_kd["is_golden_cross"] and (month_kd["k"] <= 20 or month_kd["prev_k"] <= 20)
+    week_low_gold = week_kd["is_golden_cross"] and (week_kd["k"] <= 20 or week_kd["prev_k"] <= 20)
 
-    # 1. 最佳買點 (長多短回)
-    if month_bullish and week_low_golden and day_rebound:
+    # 1. Dual Long/Mid Low Gold Cross (月 KD + 周 KD 雙低檔金叉 <= 20)
+    if month_low_gold and week_low_gold:
+        return """<span style="background-color:#ffe4e6; color:#9f1239; padding:3px 6px; border-radius:4px; font-weight:800; border:1px solid #fda4af;">🔥 長中雙週期低檔金叉 (歷史級共振)</span>"""
+
+    # 2. Month KD Low-level Golden Cross (月 KD 低檔金叉 <= 20)
+    if month_low_gold:
+        return """<span style="background-color:#fdf2f8; color:#9d174d; padding:3px 6px; border-radius:4px; font-weight:800; border:1px solid #fbcfe8;">💎 月KD低檔金叉 (長線大多頭轉折點)</span>"""
+
+    # 3. Week KD Low-level Golden Cross (周 KD 低檔金叉 <= 20)
+    if week_low_gold:
+        return """<span style="background-color:#fee2e2; color:#991b1b; padding:3px 6px; border-radius:4px; font-weight:800; border:1px solid #f87171;">🚀 周KD低檔金叉 (中波段起漲/主升點)</span>"""
+
+    # 4. Multi-Cycle Best Buy Point (最佳買點: 長多短回)
+    month_bullish = month_kd["is_bullish"] or (month_kd["k"] > month_kd["prev_k"])
+    week_low_support = (week_kd["is_golden_cross"] and week_kd["k"] <= 50) or (week_kd["is_bullish"] and week_kd["k"] < 50)
+    day_rebound = day_kd["is_reversing_up"] or day_kd["is_golden_cross"] or (day_kd["k"] > day_kd["prev_k"] and day_kd["k"] <= 30)
+
+    if month_bullish and week_low_support and day_rebound:
         return """<span style="background-color:#fee2e2; color:#b91c1c; padding:3px 6px; border-radius:4px; font-weight:800; border:1px solid #f87171;">🎯 最佳買點 (長多短回)</span>"""
 
-    # 2. 避免陷阱 (逆勢摸底)
+    # 5. Trap Avoidance (避免陷阱: 逆勢摸底)
     month_bearish = not month_kd["is_bullish"]
     week_bearish = not week_kd["is_bullish"] or week_kd["is_death_cross"]
-    day_oversold_bounce = day_kd["k"] <= 30 or day_kd["is_golden_cross"]
+    day_oversold_bounce = day_kd["k"] <= 20 or (day_kd["is_golden_cross"] and day_kd["k"] <= 20)
 
     if month_bearish and week_bearish and day_oversold_bounce:
         return """<span style="background-color:#fef2f2; color:#991b1b; padding:3px 6px; border-radius:4px; font-weight:800; border:1px solid #fca5a5;">⚠️ 避免陷阱 (逆勢摸底)</span>"""
 
-    # Other lifecycle stages
+    # 6. Trend continuations
     if month_bullish and week_kd["is_bullish"] and week_kd["k"] >= 80:
         return """<span style="background-color:#ffedd5; color:#c2410c; padding:3px 6px; border-radius:4px; font-weight:700;">🚀 強勢主升 (高檔鈍化)</span>"""
     elif month_bullish and week_kd["is_bullish"]:
@@ -209,7 +226,7 @@ def analyze_multi_kd_strategy(day_kd, week_kd, month_kd):
     return """<span style="color:#64748b; font-weight:500;">⚖️ 區間震盪觀望</span>"""
 
 def fetch_kd_section_html(watchlist):
-    """Generates the Day/Week/Month KD table with Strategy Signals & Overbought/Oversold Badges."""
+    """Generates the Day/Week/Month KD table with Strategy Signals & Overbought/Oversold/Low-Cross Badges."""
     rows = ""
     for code, meta in watchlist.items():
         name = meta["name"]
@@ -221,7 +238,7 @@ def fetch_kd_section_html(watchlist):
         
         strategy_badge = analyze_multi_kd_strategy(d_info, w_info, m_info)
         
-        def render_kd_badge(kd_dict):
+        def render_kd_badge(kd_dict, timeframe="d"):
             if not kd_dict:
                 return "<span style='color:#94a3b8;'>-</span>"
             
@@ -229,7 +246,15 @@ def fetch_kd_section_html(watchlist):
             d_val = kd_dict["d"]
             kd_str = f"K:{k_val:.1f} D:{d_val:.1f}"
             
-            cross_tag = " ↑金叉" if kd_dict["is_golden_cross"] else " ↓死叉" if kd_dict["is_death_cross"] else ""
+            # Highlight Low-level Golden Cross (Strictly K <= 20)
+            if kd_dict["is_golden_cross"] and (k_val <= 20 or kd_dict["prev_k"] <= 20):
+                return f"""<span style="background-color:#fef2f2; color:#b91c1c; padding:3px 5px; border-radius:4px; font-weight:800; border:1px solid #f87171;">{kd_str} ↑低檔金叉</span>"""
+            elif kd_dict["is_golden_cross"]:
+                cross_tag = " ↑金叉"
+            elif kd_dict["is_death_cross"]:
+                cross_tag = " ↓死叉"
+            else:
+                cross_tag = ""
             
             # Overbought (> 80)
             if k_val >= 80 or d_val >= 80:
@@ -242,9 +267,9 @@ def fetch_kd_section_html(watchlist):
         rows += f"""
         <tr style="border-bottom: 1px solid #f1f5f9; text-align: center; font-size: 12px;">
             <td style="padding: 10px 6px; text-align: left; font-weight: 600;">{name}</td>
-            <td style="padding: 10px 6px;">{render_kd_badge(d_info)}</td>
-            <td style="padding: 10px 6px;">{render_kd_badge(w_info)}</td>
-            <td style="padding: 10px 6px;">{render_kd_badge(m_info)}</td>
+            <td style="padding: 10px 6px;">{render_kd_badge(d_info, 'd')}</td>
+            <td style="padding: 10px 6px;">{render_kd_badge(w_info, 'w')}</td>
+            <td style="padding: 10px 6px;">{render_kd_badge(m_info, 'm')}</td>
             <td style="padding: 10px 6px;">{strategy_badge}</td>
         </tr>
         """
@@ -266,10 +291,12 @@ def fetch_kd_section_html(watchlist):
                 {rows}
             </tbody>
         </table>
-        <div style="margin-top: 10px; padding: 10px; background-color: #f8fafc; border-radius: 6px; font-size: 11px; color: #475569; line-height: 1.5;">
-            💡 <strong>策略邏輯指引：</strong><br/>
-            • <span style="color:#b91c1c; font-weight:bold;">🎯 最佳買點（長多短回）</span>：月 KD 維持多頭 + 周 KD 低檔金叉起漲 + 日 KD 由低點反轉向上。<br/>
-            • <span style="color:#991b1b; font-weight:bold;">⚠️ 避免陷阱（逆勢摸底）</span>：月 KD & 周 KD 同步空頭死叉向下時，即使「日 KD」超賣低檔金叉，僅為短線弱勢反彈，破底風險極高。
+        <div style="margin-top: 12px; padding: 10px; background-color: #f8fafc; border-radius: 6px; font-size: 11px; color: #475569; line-height: 1.6;">
+            💡 <strong>低檔黃金交叉 (K &le; 20 向上突破 D) 關鍵指引：</strong><br/>
+            • <span style="color:#9d174d; font-weight:bold;">💎 月 KD 低檔金叉</span>：代表<strong>長期大牛市或歷史性大多頭轉折點</strong>（K &le; 20 起漲）。<br/>
+            • <span style="color:#991b1b; font-weight:bold;">🚀 周 KD 低檔金叉</span>：代表<strong>中波段起漲訊號</strong>，常見於主升段或強勁反彈的起點。<br/>
+            • <span style="color:#b91c1c; font-weight:bold;">🎯 最佳買點（長多短回）</span>：月 KD 維持多頭 + 周 KD 低檔金叉 + 日 KD 低點反轉。<br/>
+            • <span style="color:#991b1b; font-weight:bold;">⚠️ 避免陷阱（逆勢摸底）</span>：月/周 KD 仍在持續死叉向下時，日 KD 超賣金叉僅為短線弱勢反彈，極易破底。
         </div>
     </div>
     """
@@ -651,7 +678,7 @@ def send_resend_email(html_content):
         params = {
             "from": "NewsEngine <onboarding@resend.dev>",
             "to": [RECIPIENT_EMAIL],
-            "subject": "🌟 24-Hour Executive Strategic Curation Digest & Technical Market Tracker",
+            "subject": "🌟 24-Hour Technical Market Tracker and News",
             "html": html_content,
         }
         
