@@ -28,9 +28,9 @@ KD_WATCHLIST = {
 
 # Taiwan stock watchlist for Quotes, Flow & MAs
 TW_WATCHLIST = {
-    "t00": {"name": "加權指數", "market": "tse", "yf_ticker": "^TWII"},
+    "t00": {"name": "台灣加權指數", "market": "tse", "yf_ticker": "^TWII"},
     "2330": {"name": "台積電", "market": "tse", "yf_ticker": "2330.TW"},
-    "0050": {"name": "台灣50", "market": "tse", "yf_ticker": "0050.TW"},
+    "0050": {"name": "元大0050", "market": "tse", "yf_ticker": "0050.TW"},
     "00675L": {"name": "富邦正2", "market": "tse", "yf_ticker": "00675L.TW"},
     "00631L": {"name": "元大正2", "market": "tse", "yf_ticker": "00631L.TW"},
     "00662": {"name": "富邦QQQ", "market": "tse", "yf_ticker": "00662.TW"},
@@ -96,15 +96,22 @@ def get_latest_settled_dates(lookback_days=5):
         })
     return dates
 
-def calculate_kd(highs, lows, closes, period=9):
-    """Computes classic KD (9, 3, 3) stochastic indicators."""
-    if len(closes) < period:
-        return None, None
+def calculate_kd_series(highs, lows, closes, period=9):
+    """Computes classic KD (9, 3, 3) stochastic indicators and returns (curr_k, curr_d, prev_k, prev_d)."""
+    if len(closes) < period + 1:
+        return None, None, None, None
     
     k = 50.0
     d = 50.0
+    k_history = []
+    d_history = []
     
-    for i in range(period - 1, len(closes)):
+    for i in range(len(closes)):
+        if i < period - 1:
+            k_history.append(50.0)
+            d_history.append(50.0)
+            continue
+            
         window_highs = highs[i - period + 1 : i + 1]
         window_lows = lows[i - period + 1 : i + 1]
         
@@ -115,11 +122,13 @@ def calculate_kd(highs, lows, closes, period=9):
         rsv = ((cn - ln) / (hn - ln) * 100.0) if hn != ln else 50.0
         k = (2.0 / 3.0) * k + (1.0 / 3.0) * rsv
         d = (2.0 / 3.0) * d + (1.0 / 3.0) * k
+        k_history.append(k)
+        d_history.append(d)
         
-    return round(k, 2), round(d, 2)
+    return round(k_history[-1], 2), round(d_history[-1], 2), round(k_history[-2], 2), round(d_history[-2], 2)
 
-def fetch_kd_values(ticker, interval, range_str):
-    """Fetches high, low, close data and calculates latest K and D values."""
+def fetch_kd_info(ticker, interval, range_str):
+    """Fetches high, low, close data and calculates current & previous K, D values."""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
@@ -127,12 +136,12 @@ def fetch_kd_values(ticker, interval, range_str):
     try:
         resp = requests.get(url, headers=headers, timeout=10)
         if resp.status_code != 200:
-            return None, None
+            return None
         
         data = resp.json()
         chart_result = data.get("chart", {}).get("result")
         if not chart_result:
-            return None, None
+            return None
         
         quotes = chart_result[0].get("indicators", {}).get("quote", [])[0]
         highs = quotes.get("high", [])
@@ -146,58 +155,122 @@ def fetch_kd_values(ticker, interval, range_str):
                 clean_lows.append(float(l))
                 clean_closes.append(float(c))
                 
-        return calculate_kd(clean_highs, clean_lows, clean_closes, period=9)
+        curr_k, curr_d, prev_k, prev_d = calculate_kd_series(clean_highs, clean_lows, clean_closes, period=9)
+        if curr_k is None:
+            return None
+            
+        return {
+            "k": curr_k,
+            "d": curr_d,
+            "prev_k": prev_k,
+            "prev_d": prev_d,
+            "is_bullish": curr_k > curr_d,
+            "is_golden_cross": (prev_k <= prev_d and curr_k > curr_d),
+            "is_death_cross": (prev_k >= prev_d and curr_k < curr_d),
+            "is_reversing_up": (curr_k > prev_k and curr_k < 40)
+        }
     except Exception as e:
         print(f"⚠️ Warning: KD calculation error for {ticker} ({interval}): {e}")
-        return None, None
+        return None
+
+def analyze_multi_kd_strategy(day_kd, week_kd, month_kd):
+    """
+    Evaluates '長看趨勢、短找買點' (Long trend, short trigger) Multi-Timeframe KD Strategy:
+    1. 最佳買點（長多短回）：月 KD 維持向上 + 周 KD 低檔金叉 + 日 KD 由低點反轉。
+    2. 避免陷阱（逆勢摸底）：月 KD、周 KD 持續向下/死叉，日 KD 低檔金叉/超賣 (反彈容易破底)。
+    """
+    if not month_kd or not week_kd or not day_kd:
+        return "<span style='color:#64748b;'>資料不足</span>"
+
+    month_bullish = month_kd["is_bullish"] or (month_kd["k"] > month_kd["prev_k"])
+    week_low_golden = (week_kd["is_golden_cross"] and week_kd["k"] <= 55) or (week_kd["is_bullish"] and week_kd["k"] < 50)
+    day_rebound = day_kd["is_reversing_up"] or day_kd["is_golden_cross"] or (day_kd["k"] > day_kd["prev_k"] and day_kd["k"] <= 40)
+
+    # 1. 最佳買點 (長多短回)
+    if month_bullish and week_low_golden and day_rebound:
+        return """<span style="background-color:#fee2e2; color:#b91c1c; padding:3px 6px; border-radius:4px; font-weight:800; border:1px solid #f87171;">🎯 最佳買點 (長多短回)</span>"""
+
+    # 2. 避免陷阱 (逆勢摸底)
+    month_bearish = not month_kd["is_bullish"]
+    week_bearish = not week_kd["is_bullish"] or week_kd["is_death_cross"]
+    day_oversold_bounce = day_kd["k"] <= 30 or day_kd["is_golden_cross"]
+
+    if month_bearish and week_bearish and day_oversold_bounce:
+        return """<span style="background-color:#fef2f2; color:#991b1b; padding:3px 6px; border-radius:4px; font-weight:800; border:1px solid #fca5a5;">⚠️ 避免陷阱 (逆勢摸底)</span>"""
+
+    # Other lifecycle stages
+    if month_bullish and week_kd["is_bullish"] and week_kd["k"] >= 80:
+        return """<span style="background-color:#ffedd5; color:#c2410c; padding:3px 6px; border-radius:4px; font-weight:700;">🚀 強勢主升 (高檔鈍化)</span>"""
+    elif month_bullish and week_kd["is_bullish"]:
+        return """<span style="background-color:#eff6ff; color:#1d4ed8; padding:3px 6px; border-radius:4px; font-weight:700;">📈 多方波段延續</span>"""
+    elif month_bearish and week_bearish:
+        return """<span style="background-color:#f1f5f9; color:#475569; padding:3px 6px; border-radius:4px; font-weight:600;">📉 空方整理結構</span>"""
+    
+    return """<span style="color:#64748b; font-weight:500;">⚖️ 區間震盪觀望</span>"""
 
 def fetch_kd_section_html(watchlist):
-    """Generates the Week KD & Month KD table with Overbought (>80) & Oversold (<20) alerts."""
+    """Generates the Day/Week/Month KD table with Strategy Signals & Overbought/Oversold Badges."""
     rows = ""
     for code, meta in watchlist.items():
         name = meta["name"]
         ticker = meta["ticker"]
         
-        w_k, w_d = fetch_kd_values(ticker, "1wk", "2y")
-        m_k, m_d = fetch_kd_values(ticker, "1mo", "5y")
+        d_info = fetch_kd_info(ticker, "1d", "6mo")
+        w_info = fetch_kd_info(ticker, "1wk", "2y")
+        m_info = fetch_kd_info(ticker, "1mo", "5y")
         
-        def render_kd_badge(k_val, d_val):
-            if k_val is None or d_val is None:
+        strategy_badge = analyze_multi_kd_strategy(d_info, w_info, m_info)
+        
+        def render_kd_badge(kd_dict):
+            if not kd_dict:
                 return "<span style='color:#94a3b8;'>-</span>"
             
-            kd_str = f"K: {k_val:.1f} / D: {d_val:.1f}"
+            k_val = kd_dict["k"]
+            d_val = kd_dict["d"]
+            kd_str = f"K:{k_val:.1f} D:{d_val:.1f}"
+            
+            cross_tag = " ↑金叉" if kd_dict["is_golden_cross"] else " ↓死叉" if kd_dict["is_death_cross"] else ""
+            
             # Overbought (> 80)
             if k_val >= 80 or d_val >= 80:
-                return f"""<span style="background-color:#fee2e2; color:#991b1b; padding:3px 6px; border-radius:4px; font-weight:700;">{kd_str} (超買)</span>"""
+                return f"""<span style="background-color:#fee2e2; color:#991b1b; padding:3px 5px; border-radius:4px; font-weight:700;">{kd_str}{cross_tag} (超買)</span>"""
             # Oversold (< 20)
             elif k_val <= 20 or d_val <= 20:
-                return f"""<span style="background-color:#dcfce7; color:#166534; padding:3px 6px; border-radius:4px; font-weight:700;">{kd_str} (超賣)</span>"""
-            return f"""<span style="color:#334155; font-weight:500;">{kd_str}</span>"""
+                return f"""<span style="background-color:#dcfce7; color:#166534; padding:3px 5px; border-radius:4px; font-weight:700;">{kd_str}{cross_tag} (超賣)</span>"""
+            return f"""<span style="color:#334155; font-weight:500;">{kd_str}{cross_tag}</span>"""
 
         rows += f"""
-        <tr style="border-bottom: 1px solid #f1f5f9; text-align: center; font-size: 13px;">
-            <td style="padding: 10px 8px; text-align: left; font-weight: 600;">{name}</td>
-            <td style="padding: 10px 8px;">{render_kd_badge(w_k, w_d)}</td>
-            <td style="padding: 10px 8px;">{render_kd_badge(m_k, m_d)}</td>
+        <tr style="border-bottom: 1px solid #f1f5f9; text-align: center; font-size: 12px;">
+            <td style="padding: 10px 6px; text-align: left; font-weight: 600;">{name}</td>
+            <td style="padding: 10px 6px;">{render_kd_badge(d_info)}</td>
+            <td style="padding: 10px 6px;">{render_kd_badge(w_info)}</td>
+            <td style="padding: 10px 6px;">{render_kd_badge(m_info)}</td>
+            <td style="padding: 10px 6px;">{strategy_badge}</td>
         </tr>
         """
 
     return f"""
     <div style="background-color:#ffffff; border-radius:8px; border:1px solid #e2e8f0; padding:20px; margin-bottom:20px;">
-        <div style="display:inline-block; background-color:#fae8ff; color:#86198f; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:12px; text-transform:uppercase;">⚡ Key Benchmark Momentum (周 KD / 月 KD 週期動量指標)</div>
+        <div style="display:inline-block; background-color:#fae8ff; color:#86198f; font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; margin-bottom:12px; text-transform:uppercase;">⚡ Multi-Timeframe KD Strategy (長看趨勢、短找買點策略矩陣)</div>
         <table style="width:100%; border-collapse: collapse; margin-top:6px;">
             <thead>
-                <tr style="background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; font-size: 12px; color: #64748b;">
-                    <th style="padding: 8px 8px; text-align: left;">追蹤標的</th>
-                    <th style="padding: 8px 8px;">周 KD (9, 3, 3)</th>
-                    <th style="padding: 8px 8px;">月 KD (9, 3, 3)</th>
+                <tr style="background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; font-size: 11px; color: #64748b;">
+                    <th style="padding: 8px 6px; text-align: left;">追蹤標的</th>
+                    <th style="padding: 8px 6px;">日 KD (短線反轉)</th>
+                    <th style="padding: 8px 6px;">周 KD (波段買點)</th>
+                    <th style="padding: 8px 6px;">月 KD (長線大趨勢)</th>
+                    <th style="padding: 8px 6px;">多週期策略訊號</th>
                 </tr>
             </thead>
             <tbody>
                 {rows}
             </tbody>
         </table>
-        <p style="font-size: 11px; color: #94a3b8; margin: 8px 0 0 0; text-align: right;">* 標示說明：<span style="color:#991b1b; font-weight:bold;">KD &gt; 80</span> 為超買過熱區；<span style="color:#166534; font-weight:bold;">KD &lt; 20</span> 為超賣低檔區。</p>
+        <div style="margin-top: 10px; padding: 10px; background-color: #f8fafc; border-radius: 6px; font-size: 11px; color: #475569; line-height: 1.5;">
+            💡 <strong>策略邏輯指引：</strong><br/>
+            • <span style="color:#b91c1c; font-weight:bold;">🎯 最佳買點（長多短回）</span>：月 KD 維持多頭 + 周 KD 低檔金叉起漲 + 日 KD 由低點反轉向上。<br/>
+            • <span style="color:#991b1b; font-weight:bold;">⚠️ 避免陷阱（逆勢摸底）</span>：月 KD & 周 KD 同步空頭死叉向下時，即使「日 KD」超賣低檔金叉，僅為短線弱勢反彈，破底風險極高。
+        </div>
     </div>
     """
 
@@ -329,7 +402,7 @@ def fetch_taiwan_stock_summary(watchlist):
         except Exception:
             continue
 
-    # 3B. TPEx OTC (e.g., 4772)
+    # 3B. TPEx OTC (e.g. 4772)
     for d in query_dates:
         try:
             tpex_url = f"https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge_result.php?l=zh-tw&o=json&se=EW&t=D&d={d['tpex']}"
@@ -578,7 +651,7 @@ def send_resend_email(html_content):
         params = {
             "from": "NewsEngine <onboarding@resend.dev>",
             "to": [RECIPIENT_EMAIL],
-            "subject": "🌟 24-Hour Finance News & Market Tracker",
+            "subject": "🌟 24-Hour Executive Strategic Curation Digest & Technical Market Tracker",
             "html": html_content,
         }
         
@@ -592,7 +665,7 @@ def main():
         print("❌ Configuration Missing.")
         return
 
-    print("⚡ Computing Week KD & Month KD for benchmark assets (SPY, QQQ, TAIEX, 0050, TSMC)...")
+    print("⚡ Computing Day/Week/Month KD & Multi-Cycle Strategy for SOX, SPY, QQQ, TAIEX, 0050, TSMC...")
     top_kd_html = fetch_kd_section_html(KD_WATCHLIST)
 
     print("📈 Fetching Taiwan stock quotes, institutional data, and moving average crossovers...")
